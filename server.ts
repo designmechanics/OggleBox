@@ -70,6 +70,72 @@ if (!fs.existsSync(sampleVideoPath) || fs.statSync(sampleVideoPath).size < 10000
   logStep("Boot", "Step 2/5", "Sample video verified on disk.");
 }
 
+function verifyAndFixBinary(fileName: string, backupName: string, remoteUrl: string, minSize: number, magicCheck: (buf: Buffer) => boolean) {
+  const targetPath = path.join(PUBLIC_DIR, fileName);
+  const backupPath = path.join(process.cwd(), ".backups", "binaries", backupName);
+
+  let isValid = false;
+  if (fs.existsSync(targetPath) && fs.statSync(targetPath).size >= minSize) {
+    try {
+      const fd = fs.openSync(targetPath, 'r');
+      const buf = Buffer.alloc(32);
+      fs.readSync(fd, buf, 0, 32, 0);
+      fs.closeSync(fd);
+      if (magicCheck(buf)) {
+        isValid = true;
+      }
+    } catch (e) {
+      isValid = false;
+    }
+  }
+
+  if (isValid) {
+    logStep("Boot", "BinaryCheck", `Verified ${fileName} binary on disk.`);
+    return;
+  }
+
+  logStep("Boot", "BinaryCheck", `Corrupted or missing ${fileName} detected! Restoring...`);
+
+  // Try backup first
+  if (fs.existsSync(backupPath) && fs.statSync(backupPath).size >= minSize) {
+    fs.copyFileSync(backupPath, targetPath);
+    logStep("Boot", "BinaryCheck", `Restored ${fileName} from local backup.`);
+    return;
+  }
+
+  // Otherwise download from remote URL
+  downloadSampleVideo(remoteUrl, targetPath);
+}
+
+function healAllKnownBinaries() {
+  verifyAndFixBinary(
+    "ogglebox.jpg",
+    "ogglebox.jpg",
+    "https://raw.githubusercontent.com/designmechanics/OggleBox/main/public/ogglebox.jpg",
+    100000,
+    (buf) => buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff
+  );
+
+  verifyAndFixBinary(
+    "ogglebox.mp4",
+    "ogglebox.mp4",
+    "https://raw.githubusercontent.com/designmechanics/OggleBox/main/public/ogglebox.mp4",
+    100000,
+    (buf) => buf.toString('binary').includes('ftyp') || buf.toString('binary').includes('moov') || buf.toString('binary').includes('isom')
+  );
+
+  verifyAndFixBinary(
+    "sample-big-buck-bunny.mp4",
+    "sample-big-buck-bunny.mp4",
+    "",
+    10000,
+    (buf) => buf.toString('binary').includes('ftyp') || buf.toString('binary').includes('moov') || buf.toString('binary').includes('isom')
+  );
+}
+
+// Initial binary heal on boot
+healAllKnownBinaries();
+
 function resolveVideoFilePath(rawInputPath: string): { filePath: string | null; searched: string[] } {
   const searched: string[] = [];
   if (!rawInputPath) return { filePath: null, searched };
@@ -337,6 +403,13 @@ async function startServer() {
   logStep("Boot", "Step 4/5", "Registering Express routes and static mounts...");
   app.use(express.json());
   
+  app.use((req, res, next) => {
+    if (req.path.includes("ogglebox") || req.path.includes("sample-big-buck-bunny")) {
+      healAllKnownBinaries();
+    }
+    next();
+  });
+
   app.use("/media", express.static(MEDIA_DIR));
   app.use("/public", express.static(PUBLIC_DIR));
   app.use(express.static(PUBLIC_DIR));
@@ -598,6 +671,53 @@ async function startServer() {
       logStep("Transcode", "ClientDisconnect", "HTTP request connection closed by client, terminating FFmpeg instance.");
       command.kill("SIGKILL");
     });
+  });
+
+  app.get("/api/download-zip", async (req, res) => {
+    try {
+      healAllKnownBinaries();
+      logStep("DownloadZip", "Start", "Generating project zip archive via raw stream...");
+
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+
+      // Recursive directory walker for zip archive
+      const addDirToZip = (dirPath: string, zipFolder: any) => {
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dirPath, entry.name);
+          // Skip node_modules, .backups, dist, .git
+          if (entry.name === "node_modules" || entry.name === ".backups" || entry.name === "dist" || entry.name === ".git") {
+            continue;
+          }
+          if (entry.isDirectory()) {
+            const newZipFolder = zipFolder.folder(entry.name);
+            addDirToZip(fullPath, newZipFolder);
+          } else if (entry.isFile()) {
+            const content = fs.readFileSync(fullPath);
+            zipFolder.file(entry.name, content, { binary: true });
+          }
+        }
+      };
+
+      addDirToZip(process.cwd(), zip);
+
+      const zipBuffer = await zip.generateAsync({
+        type: "nodebuffer",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 }
+      });
+
+      logStep("DownloadZip", "Complete", `Zip generated successfully (${formatBytes(zipBuffer.length)}). Streaming to client...`);
+
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", 'attachment; filename="ogglebox-project.zip"');
+      res.setHeader("Content-Length", zipBuffer.length);
+      res.end(zipBuffer);
+    } catch (err: any) {
+      logStep("DownloadZip", "Error", err?.message || err);
+      res.status(500).json({ error: "Failed to generate uncorrupted ZIP file" });
+    }
   });
 
   app.get("/api/probe/*", (req, res) => {

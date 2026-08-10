@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, RefreshCw, FolderSearch, Type, Palette, Sun, Moon, Check, HardDrive, Monitor } from 'lucide-react';
+import { X, RefreshCw, FolderSearch, Type, Palette, Sun, Moon, Check, HardDrive, Monitor, Download } from 'lucide-react';
 import type { AppSettings, PrimaryColorKey, ThemeMode } from '../types';
 
 interface SettingsModalProps {
@@ -227,6 +227,7 @@ export default function SettingsModal({
               )}
             </button>
           </div>
+
         </div>
 
         {/* Footer */}

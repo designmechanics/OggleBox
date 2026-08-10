@@ -303,7 +303,7 @@ export default function App() {
           }`}
         >
           <video
-            src={import.meta.env.VITE_SPLASH_VIDEO || "/branding/ogglebox.mp4"}
+            src={import.meta.env.VITE_SPLASH_VIDEO || "/ogglebox.mp4"}
             autoPlay
             muted
             playsInline
@@ -334,7 +334,7 @@ export default function App() {
           {/* Site Background Image - Darkened or Lightened 50% based on theme, only in grid/list view */}
           <div className={`absolute inset-0 pointer-events-none z-0 overflow-hidden transition-colors duration-1000 ${isLight ? 'bg-white' : 'bg-black'}`}>
             <img 
-              src={import.meta.env.VITE_BG_IMAGE || "/branding/ogglebox.jpg"} 
+              src={import.meta.env.VITE_BG_IMAGE || "/ogglebox.jpg"} 
               alt="" 
               className={`w-full h-full object-cover transition-opacity duration-1000 ${bgLoaded ? 'opacity-50' : 'opacity-0'}`}
               onLoad={() => setBgLoaded(true)}

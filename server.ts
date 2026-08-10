@@ -403,13 +403,6 @@ async function startServer() {
   logStep("Boot", "Step 4/5", "Registering Express routes and static mounts...");
   app.use(express.json());
   
-  app.use((req, res, next) => {
-    if (req.path.includes("ogglebox") || req.path.includes("sample-big-buck-bunny")) {
-      healAllKnownBinaries();
-    }
-    next();
-  });
-
   app.use("/media", express.static(MEDIA_DIR));
   app.use("/public", express.static(PUBLIC_DIR));
   app.use(express.static(PUBLIC_DIR));

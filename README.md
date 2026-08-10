@@ -1,3 +1,5 @@
+![OggleBox Preview](https://raw.githubusercontent.com/designmechanics/OggleBox/refs/heads/main/public/ogglebox.jpg)
+
 # OggleBox Server
 
 A fluid, lightweight local media server built with Express and React.

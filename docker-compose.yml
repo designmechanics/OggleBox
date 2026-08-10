@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  motionstream:
+    build: .
+    container_name: motionstream
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./public:/app/public
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    # Optional: Enable hardware acceleration devices if available (e.g., for QuickSync/VAAPI)
+    # devices:
+    #   - /dev/dri:/dev/dri

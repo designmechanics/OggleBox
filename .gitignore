@@ -1,0 +1,19 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Media & Caching
+media/
+library-cache.json
+
+# Backups
+.backups/
+*.bak
+
+# Build/Patch Scripts
+*.cjs

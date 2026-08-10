@@ -1,0 +1,8 @@
+{
+  "name": "OggleBox",
+  "description": "A lightweight, GSAP-powered local media server with a responsive web interface.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

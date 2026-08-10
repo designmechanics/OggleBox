@@ -433,7 +433,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         }
       }
       
-      videoRef.current.play().then(() => { setIsPlaying(true); initAudio(); }).catch(() => setIsPlaying(false));
+      videoRef.current.play().then(() => { setIsPlaying(true); }).catch(() => setIsPlaying(false));
     }
   };
 

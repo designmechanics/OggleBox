@@ -9,6 +9,12 @@ A fluid, lightweight local media server built with Express and React.
 - **Sub-category Support**: Recursively scans `media/` and groups videos.
 - **Progress Tracking**: Remembers playback progress in local storage.
 
+## How It Works
+
+- **Server Heavy Lifting**: The host machine running OggleBox performs all the intensive processing—metadata extraction, scanning, and real-time transcoding.
+- **Lightweight Clients**: The recipient machine (your browser, phone, or TV) simply receives a lightweight HTTP stream. No processing required.
+- **On-the-Fly Transcoding**: Browsers have strict codec limitations (which often cause missing audio or black screens). Using the **Transcode** button in the player forces the server to convert unsupported video or audio into a universally playable format in real-time, bypassing client limitations.
+
 ---
 
 ## ⚠️ Critical System Requirement: FFmpeg

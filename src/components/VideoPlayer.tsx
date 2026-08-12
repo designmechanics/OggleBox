@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { AudioWaveform, SlidersHorizontal, ArrowLeft, Play, Pause, Maximize, Volume2, VolumeX, Loader2, SkipBack, SkipForward, RotateCcw, RotateCw, Repeat, X } from 'lucide-react';
+import { AudioWaveform, SlidersHorizontal, ArrowLeft, Play, Pause, Maximize, Volume2, VolumeX, Loader2, SkipBack, SkipForward, RotateCcw, RotateCw, Repeat, X, Download } from 'lucide-react';
 import type { MediaItem } from '../types';
 
 
@@ -11,9 +11,10 @@ interface VideoPlayerProps {
   onClose: () => void;
   onPlayNext?: (nextItem: MediaItem) => void;
   onPlayPrev?: (prevItem: MediaItem) => void;
+  settings?: any; // Fallback type in case AppSettings isn't explicitly imported
 }
 
-export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, onPlayPrev }: VideoPlayerProps) {
+export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, onPlayPrev, settings }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -21,9 +22,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
-  const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+      const [duration, setDuration] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const controlsTimeoutRef = useRef<NodeJS.Timeout>();
@@ -31,6 +30,10 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [useTranscode, setUseTranscode] = useState(false);
   const [transcodeStartTime, setTranscodeStartTime] = useState(0);
+  // Gates mounting the <video> element until the codec capability probe below has resolved
+  // (or failed), so we don't attempt+fail a direct-play autoplay and then remount into
+  // transcode a moment later. Reset per item so each new video is re-checked.
+  const [capabilityChecked, setCapabilityChecked] = useState(false);
   const toastTimeoutRef = useRef<NodeJS.Timeout>();
 
   
@@ -43,24 +46,32 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const lastStorageSaveRef = useRef<number>(0);
   const reqRef = useRef<number>(0);
 
   const initAudio = () => {
-    if (!audioCtxRef.current && videoRef.current) {
-      try {
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-        audioCtxRef.current = new AudioContext();
+    if (!videoRef.current) return;
+    try {
+      if (!audioCtxRef.current) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          audioCtxRef.current = new AudioContextClass();
+        }
+      }
+      if (audioCtxRef.current && !analyserRef.current) {
         analyserRef.current = audioCtxRef.current.createAnalyser();
         analyserRef.current.fftSize = 128; // 64 frequency bins
+      }
+      if (audioCtxRef.current && analyserRef.current && !sourceRef.current) {
         sourceRef.current = audioCtxRef.current.createMediaElementSource(videoRef.current);
         sourceRef.current.connect(analyserRef.current);
         analyserRef.current.connect(audioCtxRef.current.destination);
-      } catch (err) {
-        console.warn("Audio Context Init Failed (Already bound or unsupported)", err);
       }
+    } catch (err) {
+      console.warn("Audio Context Init Failed:", err instanceof Error ? err.message : String(err));
     }
     if (audioCtxRef.current?.state === 'suspended') {
-      audioCtxRef.current.resume();
+      audioCtxRef.current.resume().catch(() => {});
     }
   };
 
@@ -110,7 +121,17 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const [showTheaterMode, setShowTheaterMode] = useState(false);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverPos, setHoverPos] = useState<number>(0);
+  // Playback position (currentTime/progress) is intentionally NOT React state — it changes
+  // ~4x/sec via `timeupdate` and putting it in state re-renders this whole component on every
+  // tick. These refs are the only source of truth for "where are we in the video"; write them
+  // exclusively through updatePlaybackDisplay() below. Do not add a currentTime/progress
+  // useState — that was tried before and caused stutter, and the dangling reads left behind
+  // when it was removed became ReferenceErrors.
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const progressDotRef = useRef<HTMLDivElement>(null);
+  const currentTimeRef = useRef<HTMLSpanElement>(null);
+  const remainingTimeRef = useRef<HTMLSpanElement>(null);
+  const progressInputRef = useRef<HTMLInputElement>(null);
   const [showProgressHover, setShowProgressHover] = useState(false);
     const [loopMode, setLoopMode] = useState<'off' | 'single' | 'all'>('off');
   const [loopAB, setLoopAB] = useState<{a: number | null, b: number | null}>({a: null, b: null});
@@ -123,6 +144,65 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       videoRef.current.playbackRate = playbackRate;
     }
   }, [playbackRate, isLoaded]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCapabilityChecked(false);
+    setTranscodeStartTime(0);
+
+    let cleanPath = item.path || item.url || '';
+    cleanPath = cleanPath.replace(/^\/api\/stream\//, '').replace(/^\/api\/transcode\//, '').replace(/^transcode\//, '').replace(/^\/+/, '');
+    const encodedPath = cleanPath.split('/').map(encodeURIComponent).join('/');
+
+    fetch(`/api/probe/${encodedPath}`)
+      .then(r => r.json())
+      .then(meta => {
+        if (cancelled) return;
+        const videoCodec = meta?.video?.codec?.toLowerCase();
+        const audioCodec = meta?.audio?.codec?.toLowerCase();
+
+        let needsTranscode = false;
+        let reason = '';
+
+        if (videoCodec === 'hevc' || videoCodec === 'h265') {
+          // Hardware Capability Check
+          const videoTest = document.createElement('video');
+          const canPlayHEVC = videoTest.canPlayType('video/mp4; codecs="hvc1"') || videoTest.canPlayType('video/mp4; codecs="hev1"');
+          if (!canPlayHEVC) {
+            needsTranscode = true;
+            reason = 'HEVC video unsupported';
+          }
+        }
+
+        // canPlayType() is unreliable for these licensed codecs across browsers, so we
+        // check by name instead of trusting a MIME probe.
+        const UNSUPPORTED_AUDIO_CODECS = ['ac3', 'eac3', 'ec-3', 'dts', 'dca', 'truehd', 'mlp'];
+        if (!needsTranscode && audioCodec && UNSUPPORTED_AUDIO_CODECS.includes(audioCodec)) {
+          needsTranscode = true;
+          reason = `${audioCodec.toUpperCase()} audio unsupported`;
+        }
+
+        if (needsTranscode) {
+          setUseTranscode(true);
+          const resumeTime = getSavedResumeTime(item.id, meta?.duration || 0);
+          if (resumeTime !== null) setTranscodeStartTime(resumeTime);
+          showToast(`${reason}: Auto-Transcoding to H.264/AAC`);
+        } else if (videoCodec === 'hevc' || videoCodec === 'h265') {
+          setUseTranscode(false);
+          showToast('Native HEVC Supported: Direct Play');
+        }
+      })
+      .catch(() => {
+        // Probe failed (e.g. offline/500) — fall back to attempting direct play rather
+        // than blocking playback indefinitely.
+      })
+      .finally(() => {
+        if (!cancelled) setCapabilityChecked(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [item]);
+
 
 
   const showToast = (msg: string) => {
@@ -241,6 +321,18 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  // Single source of truth for "where should this item resume from" — used for both direct
+  // play (seeks videoRef.current.currentTime) and transcode (seeds transcodeStartTime, since
+  // an ffmpeg stream can't be seeked after the fact and must start at the right offset).
+  const getSavedResumeTime = (mediaId: string, totalDuration: number): number | null => {
+    const savedTime = localStorage.getItem(`motionstream_progress_${mediaId}`);
+    if (!savedTime) return null;
+    const time = parseFloat(savedTime);
+    if (isNaN(time) || time <= 0) return null;
+    if (totalDuration > 0 && time >= totalDuration - 5) return null;
+    return time;
   };
 
   useGSAP(() => {
@@ -375,11 +467,26 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     }
   };
 
+  // Single place that writes playback position into the DOM. If you need position
+  // somewhere new (a HUD element, a export, whatever), read the refs or extend this
+  // function — do not add a currentTime/progress useState (see the comment on the refs above).
+  const updatePlaybackDisplay = (time: number, activeDuration: number) => {
+    if (currentTimeRef.current) currentTimeRef.current.innerText = formatTime(time);
+    if (remainingTimeRef.current) {
+      remainingTimeRef.current.innerText = activeDuration > time ? `-${formatTime(activeDuration - time)}` : '00:00';
+    }
+    const p = activeDuration > 0 ? (time / activeDuration) * 100 : 0;
+    if (progressBarRef.current) progressBarRef.current.style.width = `${p || 0}%`;
+    if (progressDotRef.current) progressDotRef.current.style.left = `${p || 0}%`;
+    if (progressInputRef.current) progressInputRef.current.value = String(p || 0);
+    return p;
+  };
+
   const handleTimeUpdate = () => {
     if (videoRef.current) {
       let time = videoRef.current.currentTime;
       let currentDuration = videoRef.current.duration;
-      
+
       if (useTranscode) {
         time += transcodeStartTime;
         // In transcode mode, duration might be Infinity due to streaming
@@ -389,14 +496,12 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         }
       }
 
-      setCurrentTime(time);
       if (currentDuration > 0 && currentDuration !== Infinity) {
         setDuration(currentDuration);
       }
-      
+
       const activeDuration = currentDuration > 0 && currentDuration !== Infinity ? currentDuration : duration;
-      const p = activeDuration > 0 ? (time / activeDuration) * 100 : 0;
-      setProgress(p || 0);
+      const p = updatePlaybackDisplay(time, activeDuration);
 
       // Enforce A-B loop if set
       if (loopAB.a !== null && loopAB.b !== null && loopAB.b > loopAB.a) {
@@ -410,8 +515,10 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         }
       }
       
-      // Save progress to local storage
-      if (time > 0 && activeDuration > 0) {
+      // Save progress to local storage (throttled to once every 3 seconds to prevent I/O stutter)
+      const now = Date.now();
+      if (time > 0 && activeDuration > 0 && now - lastStorageSaveRef.current > 3000) {
+        lastStorageSaveRef.current = now;
         localStorage.setItem(`motionstream_progress_${item.id}`, time.toString());
         localStorage.setItem(`motionstream_progress_percent_${item.id}`, p.toString());
       }
@@ -422,14 +529,11 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     setIsLoaded(true);
     if (videoRef.current) {
       if (!useTranscode) {
-        // Restore progress for direct play
-        const savedTime = localStorage.getItem(`motionstream_progress_${item.id}`);
-        if (savedTime && !isNaN(parseFloat(savedTime))) {
-          const time = parseFloat(savedTime);
-          if (time < videoRef.current.duration - 5) {
-            videoRef.current.currentTime = time;
-            setCurrentTime(time);
-          }
+        // Transcode mode's resume point is handled earlier via transcodeStartTime, since an
+        // ffmpeg stream has to start at the right offset — it can't be seeked after the load.
+        const resumeTime = getSavedResumeTime(item.id, videoRef.current.duration);
+        if (resumeTime !== null) {
+          videoRef.current.currentTime = resumeTime;
         }
       }
       
@@ -449,7 +553,6 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       } else {
         videoRef.current.currentTime = time;
       }
-      setProgress(percentage);
     }
   };
 
@@ -461,13 +564,13 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         await videoRef.current.requestPictureInPicture();
       }
     } catch (err) {
-      console.error(err);
+      console.error("PiP error:", err instanceof Error ? err.message : String(err));
     }
   };
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       containerRef.current?.requestFullscreen().catch(err => {
-        console.error("Error attempting to enable fullscreen:", err);
+        console.error("Error attempting to enable fullscreen:", err instanceof Error ? err.message : String(err));
       });
     } else {
       document.exitFullscreen();
@@ -547,8 +650,10 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         )}
 
         
+        {capabilityChecked && (
         <video
-
+          preload="auto"
+          playsInline
           key={useTranscode ? `transcode-${transcodeStartTime}` : 'direct'}
           ref={videoRef}
           src={(() => {
@@ -556,7 +661,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
             cleanPath = cleanPath.replace(/^\/api\/stream\//, '').replace(/^\/api\/transcode\//, '').replace(/^transcode\//, '').replace(/^\/+/, '');
             const encodedPath = cleanPath.split('/').map(encodeURIComponent).join('/');
             if (useTranscode) {
-              return `/api/transcode/${encodedPath}?start=${transcodeStartTime}`;
+              const profile = settings?.transcodeProfile || 'netflix';
+              return `/api/transcode/${encodedPath}?start=${transcodeStartTime}&profile=${profile}`;
             }
             return `/api/stream/${encodedPath}`;
           })()}
@@ -568,7 +674,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           onCanPlay={() => setIsLoaded(true)}
           onLoadedMetadata={() => setIsLoaded(true)}
           onError={(e) => {
-            console.error("Video element playback error:", e);
+            const mediaErr = (e.currentTarget as HTMLVideoElement)?.error;
+            console.error("Video element playback error:", mediaErr ? `${mediaErr.code}: ${mediaErr.message}` : "Playback error");
             setIsLoaded(true);
             showToast("Playback error or unsupported format");
           }}
@@ -586,12 +693,12 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           }}
 
           autoPlay
-          playsInline
         />
-        
-        
+        )}
 
-        
+
+
+
 
         
         {/* HUD Toast overlay */}
@@ -630,7 +737,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
               {/* Blue Progress Fill */}
               <div 
                 className="absolute left-0 top-0 bottom-0 bg-cyan-400 rounded-full shadow-[0_0_12px_rgba(34,211,238,0.8)] transition-all duration-75" 
-                style={{ width: `${progress}%` }}
+                ref={progressBarRef} style={{ width: '0%' }}
               />
               
               {/* A-B Loop Range Overlay */}
@@ -666,7 +773,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
             {/* Progress Handle / Scrubber Point */}
             <div 
               className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 bg-white border-2 border-cyan-400 rounded-full shadow-[0_0_10px_rgba(34,211,238,1)] pointer-events-none transition-transform group-hover:scale-125 z-30"
-              style={{ left: `${progress}%` }}
+              ref={progressDotRef} style={{ left: '0%' }}
             />
 
             {/* Interactive Seek Input */}
@@ -675,7 +782,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
               min="0" 
               max="100" 
               step="0.05"
-              value={progress}
+              ref={progressInputRef} defaultValue={0}
               onChange={handleSeek}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-40"
             />
@@ -731,9 +838,9 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
 
               {/* Time display */}
               <div className="text-xs font-mono tracking-wider text-white flex items-center leading-none">
-                <span>{formatTime(currentTime)}<span className="text-white/50 mx-0.5">/</span><span className="text-white/70">{formatTime(duration)}</span></span>
-                <span className="ml-2 px-1.5 py-0.5 rounded bg-white/10 text-[9px] uppercase text-white/60">
-                  {duration > currentTime ? `-${formatTime(duration - currentTime)}` : '00:00'}
+                <span><span ref={currentTimeRef}>0:00</span><span className="text-white/50 mx-0.5">/</span><span className="text-white/70">{formatTime(duration)}</span></span>
+                <span ref={remainingTimeRef} className="ml-2 px-1.5 py-0.5 rounded bg-white/10 text-[9px] uppercase text-white/60">
+                  00:00
                 </span>
               </div>
             </div>
@@ -830,6 +937,21 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
               >
                 <AudioWaveform className="w-4 h-4" />
               </button>
+              
+              <button 
+                onClick={() => {
+                  let cleanPath = item.path || item.url || '';
+                  cleanPath = cleanPath.replace(/^\/api\/stream\//, '').replace(/^\/api\/transcode\//, '').replace(/^transcode\//, '').replace(/^\/+/, '');
+                  const encodedPath = cleanPath.split('/').map(encodeURIComponent).join('/');
+                  window.location.href = `/api/download/${encodedPath}`;
+                  showToast('Downloading...');
+                }}
+                className={`flex items-center justify-center p-2 rounded-full transition-colors transform hover:scale-110 text-white/50 hover:text-white`}
+                title="Download Video"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+
               <div className="relative flex items-center justify-center">
               <button 
                 onClick={() => setShowFilters(p => !p)}

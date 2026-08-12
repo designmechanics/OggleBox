@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { Play, Info, Settings, Loader2, Search, X, RefreshCw, FileText, Calendar, HardDrive, LayoutGrid, List, Heart, Clock, SortAsc, SortDesc, Zap } from 'lucide-react';
+import { Play, Info, Settings, Loader2, Search, X, RefreshCw, FileText, Calendar, HardDrive, LayoutGrid, List, Heart, Clock, SortAsc, SortDesc, Zap, Volume2, VolumeX } from 'lucide-react';
 import type { MediaItem, AppSettings, PrimaryColorKey, ThemeMode } from './types';
 import VideoPlayer from './components/VideoPlayer';
 import CategorySidebar from './components/CategorySidebar';
@@ -40,7 +40,8 @@ export default function App() {
       appTitle: import.meta.env.VITE_APP_TITLE || 'OggleBox Server',
       pageTitle: import.meta.env.VITE_PAGE_TITLE || 'OggleBox - Media Library',
       primaryColor: 'cyan',
-      theme: 'dark'
+      theme: 'dark',
+      transcodeProfile: 'netflix'
     };
   });
 
@@ -51,6 +52,7 @@ export default function App() {
   // Splash Screen & Background Image States
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('ogglebox_splash_seen_v2'));
   const [splashFading, setSplashFading] = useState(false);
+  const splashVideoRef = useRef<HTMLVideoElement>(null);
   const [bgLoaded, setBgLoaded] = useState(false);
 
   const triggerFade = () => {
@@ -63,6 +65,12 @@ export default function App() {
 
   useEffect(() => {
     if (showSplash) {
+      if (splashVideoRef.current) {
+        const vid = splashVideoRef.current;
+        vid.volume = 1.0;
+        vid.muted = false;
+        vid.play().catch(() => {});
+      }
       // Fallback timeout in case video fails to load or play
       const timer = setTimeout(triggerFade, 5000);
       return () => clearTimeout(timer);
@@ -163,9 +171,13 @@ export default function App() {
     try {
       const libRes = await fetch('/api/library');
       const libData = await libRes.json();
-      setLibrary(libData);
+      if (Array.isArray(libData)) {
+        setLibrary(libData);
+      } else {
+        console.warn("Library API did not return an array:", libData);
+      }
     } catch (err) {
-      console.error("Failed to fetch library:", err);
+      console.error("Failed to fetch library:", err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -234,7 +246,7 @@ export default function App() {
       await fetchLibrary();
       setSelectedDetailMedia(prev => prev ? { ...prev, poster: `${prev.poster}?t=${Date.now()}` } : null);
     } catch (err) {
-      console.error(err);
+      console.error("Regenerate thumbnail error:", err instanceof Error ? err.message : String(err));
     } finally {
       setRegenerating(false);
     }
@@ -303,9 +315,9 @@ export default function App() {
           }`}
         >
           <video
+            ref={splashVideoRef}
             src={import.meta.env.VITE_SPLASH_VIDEO || "/ogglebox.mp4"}
             autoPlay
-            muted
             playsInline
             onEnded={triggerFade}
             className="w-full h-full object-cover"
@@ -328,6 +340,7 @@ export default function App() {
           onClose={closePlayer} 
           onPlayNext={(nextItem) => setActiveMedia(nextItem)}
           onPlayPrev={(prevItem) => setActiveMedia(prevItem)}
+          settings={settings}
         />
       ) : (
         <div className="relative z-10 flex flex-col h-full overflow-hidden">

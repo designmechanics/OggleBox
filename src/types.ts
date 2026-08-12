@@ -49,11 +49,13 @@ export type DeepMeta = {
 
 export type PrimaryColorKey = 'cyan' | 'pink' | 'emerald' | 'amber';
 export type ThemeMode = 'dark' | 'light';
+export type TranscodeProfile = 'netflix' | 'smooth' | 'standard' | 'anime' | 'low';
 
 export type AppSettings = {
   appTitle: string;
   pageTitle: string;
   primaryColor: PrimaryColorKey;
   theme: ThemeMode;
+  transcodeProfile: TranscodeProfile;
 };
 

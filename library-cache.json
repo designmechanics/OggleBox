@@ -1,5 +1,20 @@
 [
   {
+    "id": "public/branding/ogglebox.mp4",
+    "filename": "ogglebox.mp4",
+    "path": "public/branding/ogglebox.mp4",
+    "category": "branding",
+    "url": "/api/stream/public/branding/ogglebox.mp4",
+    "title": "ogglebox",
+    "year": 2026,
+    "size": 1444857,
+    "sizeFormatted": "1.38 MB",
+    "modifiedAt": "Aug 10, 2026",
+    "format": "MP4",
+    "description": "",
+    "poster": "/placeholder.jpg"
+  },
+  {
     "id": "public/ogglebox.mp4",
     "filename": "ogglebox.mp4",
     "path": "public/ogglebox.mp4",
@@ -7,8 +22,8 @@
     "url": "/api/stream/public/ogglebox.mp4",
     "title": "ogglebox",
     "year": 2026,
-    "size": 1444857,
-    "sizeFormatted": "1.38 MB",
+    "size": 839126,
+    "sizeFormatted": "819.46 KB",
     "modifiedAt": "Aug 10, 2026",
     "format": "MP4",
     "description": "",
@@ -22,11 +37,11 @@
     "url": "/api/stream/public/sample-big-buck-bunny.mp4",
     "title": "sample-big-buck-bunny",
     "year": 2026,
-    "size": 2037514,
-    "sizeFormatted": "1.94 MB",
+    "size": 1128375,
+    "sizeFormatted": "1.08 MB",
     "modifiedAt": "Aug 10, 2026",
     "format": "MP4",
     "description": "",
-    "poster": "/public/sample-big-buck-bunny.jpg?t=1786398661184"
+    "poster": "/public/sample-big-buck-bunny.jpg"
   }
 ]

@@ -35,42 +35,53 @@ logStep("Boot", "Step 1/5", "Checking system directories...");
 
 const sampleVideoPath = path.join(PUBLIC_DIR, "sample-big-buck-bunny.mp4");
 
-function downloadSampleVideo(url: string, destPath: string, maxRedirects = 5) {
-  if (maxRedirects <= 0) return;
-  logStep("Boot", "SampleDownload", `Downloading sample video from ${url}...`);
-  const client = url.startsWith("https") ? https : http;
-  client.get(url, (res) => {
-    if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-      let redirectUrl = res.headers.location;
-      if (!redirectUrl.startsWith("http")) {
-        const parsed = new URL(url);
-        redirectUrl = `${parsed.protocol}//${parsed.host}${redirectUrl}`;
+function downloadSampleVideo(url: string, destPath: string, maxRedirects = 5): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (maxRedirects <= 0 || !url) return resolve(false);
+    logStep("Boot", "SampleDownload", `Downloading sample binary from ${url}...`);
+    const tempPath = `${destPath}.tmp.${Date.now()}`;
+    const client = url.startsWith("https") ? https : http;
+
+    const req = client.get(url, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        let redirectUrl = res.headers.location;
+        if (!redirectUrl.startsWith("http")) {
+          const parsed = new URL(url);
+          redirectUrl = `${parsed.protocol}//${parsed.host}${redirectUrl}`;
+        }
+        return downloadSampleVideo(redirectUrl, destPath, maxRedirects - 1).then(resolve);
       }
-      return downloadSampleVideo(redirectUrl, destPath, maxRedirects - 1);
-    }
-    if (res.statusCode !== 200) {
-      logStep("Boot", "SampleDownloadError", `Failed to download sample video, HTTP ${res.statusCode}`);
-      return;
-    }
-    const file = fs.createWriteStream(destPath);
-    res.pipe(file);
-    file.on("finish", () => {
-      file.close(() => logStep("Boot", "SampleDownloadOK", "Sample video downloaded successfully."));
+      if (res.statusCode !== 200) {
+        logStep("Boot", "SampleDownloadError", `Failed to download binary, HTTP ${res.statusCode}`);
+        return resolve(false);
+      }
+      const file = fs.createWriteStream(tempPath);
+      res.pipe(file);
+      file.on("finish", () => {
+        file.close(() => {
+          try {
+            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+            fs.renameSync(tempPath, destPath);
+            logStep("Boot", "SampleDownloadOK", `Binary download completed for ${path.basename(destPath)}`);
+            resolve(true);
+          } catch (e) {
+            logStep("Boot", "SampleDownloadError", `Failed to finalize downloaded binary: ${e}`);
+            if (fs.existsSync(tempPath)) { try { fs.unlinkSync(tempPath); } catch {} }
+            resolve(false);
+          }
+        });
+      });
     });
-  }).on("error", (err) => {
-    logStep("Boot", "SampleDownloadError", err.message);
-    if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+
+    req.on("error", (err) => {
+      logStep("Boot", "SampleDownloadError", err.message);
+      if (fs.existsSync(tempPath)) { try { fs.unlinkSync(tempPath); } catch {} }
+      resolve(false);
+    });
   });
 }
 
-if (!fs.existsSync(sampleVideoPath) || fs.statSync(sampleVideoPath).size < 100000) {
-  logStep("Boot", "Step 2/5", "Sample video missing or incomplete. Initiating background download...");
-  downloadSampleVideo("https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4", sampleVideoPath);
-} else {
-  logStep("Boot", "Step 2/5", "Sample video verified on disk.");
-}
-
-function verifyAndFixBinary(fileName: string, backupName: string, remoteUrl: string, minSize: number, magicCheck: (buf: Buffer) => boolean) {
+async function verifyAndFixBinary(fileName: string, backupName: string, remoteUrl: string, minSize: number, magicCheck: (buf: Buffer) => boolean): Promise<boolean> {
   const targetPath = path.join(PUBLIC_DIR, fileName);
   const backupPath = path.join(process.cwd(), ".backups", "binaries", backupName);
 
@@ -90,25 +101,41 @@ function verifyAndFixBinary(fileName: string, backupName: string, remoteUrl: str
   }
 
   if (isValid) {
-    logStep("Boot", "BinaryCheck", `Verified ${fileName} binary on disk.`);
-    return;
+    logStep("Boot", "BinaryCheck", `Verified ${fileName} binary on disk (${formatBytes(fs.statSync(targetPath).size)}).`);
+    return true;
   }
 
   logStep("Boot", "BinaryCheck", `Corrupted or missing ${fileName} detected! Restoring...`);
 
   // Try backup first
   if (fs.existsSync(backupPath) && fs.statSync(backupPath).size >= minSize) {
-    fs.copyFileSync(backupPath, targetPath);
-    logStep("Boot", "BinaryCheck", `Restored ${fileName} from local backup.`);
-    return;
+    try {
+      fs.copyFileSync(backupPath, targetPath);
+      logStep("Boot", "BinaryCheck", `Restored ${fileName} from local backup (${formatBytes(fs.statSync(targetPath).size)}).`);
+      return true;
+    } catch (e) {
+      logStep("Boot", "BinaryCheck", `Backup restore failed for ${fileName}: ${e}`);
+    }
   }
 
   // Otherwise download from remote URL
-  downloadSampleVideo(remoteUrl, targetPath);
+  if (remoteUrl) {
+    const downloaded = await downloadSampleVideo(remoteUrl, targetPath);
+    if (downloaded) {
+      // Backup new clean copy
+      try {
+        const backupDir = path.dirname(backupPath);
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+        fs.copyFileSync(targetPath, backupPath);
+      } catch {}
+      return true;
+    }
+  }
+  return false;
 }
 
-function healAllKnownBinaries() {
-  verifyAndFixBinary(
+async function healAllKnownBinaries() {
+  await verifyAndFixBinary(
     "ogglebox.jpg",
     "ogglebox.jpg",
     "https://raw.githubusercontent.com/designmechanics/OggleBox/main/public/ogglebox.jpg",
@@ -116,7 +143,7 @@ function healAllKnownBinaries() {
     (buf) => buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff
   );
 
-  verifyAndFixBinary(
+  await verifyAndFixBinary(
     "ogglebox.mp4",
     "ogglebox.mp4",
     "https://raw.githubusercontent.com/designmechanics/OggleBox/main/public/ogglebox.mp4",
@@ -124,11 +151,11 @@ function healAllKnownBinaries() {
     (buf) => buf.toString('binary').includes('ftyp') || buf.toString('binary').includes('moov') || buf.toString('binary').includes('isom')
   );
 
-  verifyAndFixBinary(
+  await verifyAndFixBinary(
     "sample-big-buck-bunny.mp4",
     "sample-big-buck-bunny.mp4",
-    "",
-    10000,
+    "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    100000,
     (buf) => buf.toString('binary').includes('ftyp') || buf.toString('binary').includes('moov') || buf.toString('binary').includes('isom')
   );
 }
@@ -194,27 +221,36 @@ function generateThumbnailAtTimestamp(videoPath: string, thumbnailPath: string, 
       fs.mkdirSync(thumbDir, { recursive: true });
     }
 
+    const tempPath = `${thumbnailPath}.tmp.${Date.now()}`;
     logStep("Thumbnail", "FFmpeg", `Extracting frame for "${filename}" at ${timestamp}s...`);
 
     ffmpeg(videoPath)
       .seekInput(timestamp)
       .outputOptions(['-vframes 1', '-q:v 2'])
-      .output(thumbnailPath)
+      .output(tempPath)
       .on("end", () => {
-        if (fs.existsSync(thumbnailPath) && fs.statSync(thumbnailPath).size > 100) {
-          logStep("Thumbnail", "OK", `Created thumbnail for "${filename}"`);
-          resolve(true);
-        } else {
-          if (fs.existsSync(thumbnailPath)) {
-            try { fs.unlinkSync(thumbnailPath); } catch {}
+        if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 100) {
+          try {
+            if (fs.existsSync(thumbnailPath)) {
+              fs.unlinkSync(thumbnailPath);
+            }
+            fs.renameSync(tempPath, thumbnailPath);
+            logStep("Thumbnail", "OK", `Created thumbnail for "${filename}"`);
+            resolve(true);
+            return;
+          } catch (e) {
+            logStep("Thumbnail", "Warn", `Failed to rename temp thumbnail: ${e}`);
           }
-          resolve(false);
         }
+        if (fs.existsSync(tempPath)) {
+          try { fs.unlinkSync(tempPath); } catch {}
+        }
+        resolve(false);
       })
       .on("error", (err) => {
         logStep("Thumbnail", "Warn", `FFmpeg frame extraction failed at ${timestamp}s for "${filename}": ${err.message}`);
-        if (fs.existsSync(thumbnailPath)) {
-          try { fs.unlinkSync(thumbnailPath); } catch {}
+        if (fs.existsSync(tempPath)) {
+          try { fs.unlinkSync(tempPath); } catch {}
         }
         resolve(false);
       })
@@ -430,16 +466,15 @@ async function startServer() {
 
     logStep("LibraryAPI", "Step 2/3", "Cache MISS or forced refresh: Scanning media directories...");
     const t0 = Date.now();
-          const mediaFiles = await scanDirectoryForVideos(MEDIA_DIR);
-      const publicFiles = await scanDirectoryForVideos(PUBLIC_DIR);
-      const files = Array.from(new Set([...mediaFiles, ...publicFiles]));
+    const mediaFiles = await scanDirectoryForVideos(MEDIA_DIR);
+    const publicFiles = await scanDirectoryForVideos(PUBLIC_DIR);
+    const files = Array.from(new Set([...mediaFiles, ...publicFiles]));
       
-      const currentCache = loadLibraryCache();
-      if (currentCache && currentCache.length === files.length) {
-         logStep("FolderScan", "Fast Check", `Cache matches disk count (${files.length}). Skipping heavy scan.`);
-         currentScanProgress.inProgress = false;
-         return res.json({ status: "success", message: "Scan skipped: no changes detected", added: 0, errors: 0, total: files.length });
-      }
+    const currentCache = loadLibraryCache();
+    if (currentCache && currentCache.length === files.length) {
+       logStep("LibraryAPI", "Fast Check", `Cache matches disk count (${files.length}). Returning cached items.`);
+       return res.json(currentCache);
+    }
     logStep("LibraryAPI", "Step 3/3", `Disk scan found ${files.length} video files in ${Date.now() - t0}ms`);
 
     const videos = await buildLibraryFromFiles(files);
@@ -622,25 +657,54 @@ async function startServer() {
     logStep("Transcode", "Step 3/5", `Source file size: ${formatBytes(stat.size)}`);
 
     const startTime = req.query.start ? parseFloat(req.query.start as string) : 0;
-    logStep("Transcode", "Step 4/5", `Spawning FFmpeg pipeline (H.264/AAC MP4) seeking to t=${startTime}s...`);
+    const targetCodec = req.query.codec === 'libx265' ? 'libx265' : 'libx264';
+    logStep("Transcode", "Step 4/5", `Spawning FFmpeg pipeline (${targetCodec}/AAC MP4) seeking to t=${startTime}s...`);
 
     res.contentType('video/mp4');
 
     let logCounter = 0;
+    const profile = req.query.profile as string || 'netflix';
+    let ffmpegOptions = [
+      '-pix_fmt yuv420p',
+      '-ac 2',
+      '-movflags frag_keyframe+empty_moov+default_base_moof',
+      '-threads 0'
+    ];
+
+    if (targetCodec === 'libx265') {
+      ffmpegOptions.push('-tag:v hvc1'); // Required for Apple devices to play HEVC mp4 streams natively
+    }
+
+    switch(profile) {
+      case 'netflix':
+        // Netflix-Tier LAN (Pristine): High bandwidth, forced keyframes every 2s
+        ffmpegOptions.push('-preset fast', '-crf 18', '-tune film', '-g 60', '-bufsize 10M', '-maxrate 15M', '-profile:v high', '-b:a 192k');
+        break;
+      case 'smooth':
+        // Smooth Action (Zero Latency): Low buffer, zerolatency tuning
+        ffmpegOptions.push('-preset veryfast', '-crf 20', '-tune zerolatency', '-g 30', '-bufsize 5M', '-maxrate 8M', '-b:a 192k');
+        break;
+      case 'anime':
+        // Anime / Animation: Tuned for flat colours and longer GOP
+        ffmpegOptions.push('-preset fast', '-crf 20', '-tune animation', '-g 120', '-b:a 192k');
+        break;
+      case 'low':
+        // Bandwidth Saver: Fast compression, lower bitrate constraint
+        ffmpegOptions.push('-preset superfast', '-crf 28', '-g 60', '-maxrate 3M', '-bufsize 3M', '-b:a 128k');
+        break;
+      case 'standard':
+      default:
+        // Standard Balance
+        ffmpegOptions.push('-preset veryfast', '-crf 23', '-g 60', '-b:a 192k');
+        break;
+    }
+
     const command = ffmpeg(filePath)
       .seekInput(startTime)
-      .videoCodec('libx264')
+      .videoCodec(targetCodec)
       .audioCodec('aac')
       .format('mp4')
-      .outputOptions([
-        '-pix_fmt yuv420p',
-        '-ac 2',
-        '-b:a 128k',
-        '-movflags frag_keyframe+empty_moov',
-        '-preset ultrafast',
-        '-crf 28',
-        '-threads 0'
-      ])
+      .outputOptions(ffmpegOptions)
       .on('progress', (progress) => {
         logCounter++;
         if (logCounter % 15 === 1) {
@@ -763,16 +827,13 @@ async function startServer() {
 
   app.get("/api/stream/*", (req, res) => {
     let rawPath = req.params[0] || req.url.replace(/^\/api\/stream\//, "").split('?')[0];
-    logStep("DirectStream", "Step 1/4", `Stream request received for raw path: "${rawPath}"`);
 
-    const { filePath, searched } = resolveVideoFilePath(rawPath);
+    const { filePath } = resolveVideoFilePath(rawPath);
 
     if (!filePath) {
-      logStep("DirectStream", "ERROR 404", `File not found for "${rawPath}". Searched locations:`, searched);
       return res.status(404).send(`Stream file not found: ${rawPath}`);
     }
 
-    logStep("DirectStream", "Step 2/4", `Resolved target file: "${filePath}"`);
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
     const range = req.headers.range;
@@ -788,23 +849,22 @@ async function startServer() {
     else if (ext === ".flv") contentType = "video/x-flv";
     else if (ext === ".wmv") contentType = "video/x-ms-wmv";
 
-    logStep("DirectStream", "Step 3/4", `File Size: ${formatBytes(fileSize)} | MIME: ${contentType} | Range: ${range || 'Full File'}`);
-
     if (range) {
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
 
-      if (start >= fileSize || end >= fileSize) {
-        logStep("DirectStream", "416 Range Error", `Requested range ${range} invalid for file size ${fileSize}`);
+      if (end >= fileSize) {
+        end = fileSize - 1;
+      }
+
+      if (start >= fileSize || start > end) {
         res.status(416).setHeader("Content-Range", `bytes */${fileSize}`);
         return res.end();
       }
 
       const chunksize = (end - start) + 1;
-      logStep("DirectStream", "Step 4/4", `Streaming byte range ${start}-${end}/${fileSize} (${formatBytes(chunksize)})`);
-
-      const file = fs.createReadStream(filePath, { start, end });
+      const file = fs.createReadStream(filePath, { start, end, highWaterMark: 1024 * 512 });
 
       req.on("close", () => {
         file.destroy();
@@ -815,12 +875,14 @@ async function startServer() {
         "Accept-Ranges": "bytes",
         "Content-Length": chunksize,
         "Content-Type": contentType,
+        "Cache-Control": "public, max-age=86400",
+        "Connection": "keep-alive",
+        "Keep-Alive": "timeout=5"
       };
       res.writeHead(206, head);
       file.pipe(res);
     } else {
-      logStep("DirectStream", "Step 4/4", `Streaming full file content (${formatBytes(fileSize)})`);
-      const file = fs.createReadStream(filePath);
+      const file = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 * 2 }); // bumped to 2MB for large files
 
       req.on("close", () => {
         file.destroy();
@@ -830,12 +892,28 @@ async function startServer() {
         "Content-Length": fileSize,
         "Content-Type": contentType,
         "Accept-Ranges": "bytes",
+        "Connection": "keep-alive"
       };
       res.writeHead(200, head);
       file.pipe(res);
     }
   });
 
+  app.get("/api/download/*", (req, res) => {
+    let rawPath = req.params[0] || req.url.replace(/^\/api\/download\//, "").split('?')[0];
+    const { filePath } = resolveVideoFilePath(rawPath);
+
+    if (!filePath) {
+      return res.status(404).send(`File not found: ${rawPath}`);
+    }
+
+    const filename = path.basename(filePath);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    
+    const file = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 * 5 }); // Fast 5MB chunks for downloading
+    file.pipe(res);
+  });
   logStep("Boot", "Step 5/5", "Mounting Vite dev server middleware...");
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

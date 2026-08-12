@@ -221,12 +221,15 @@ function generateThumbnailAtTimestamp(videoPath: string, thumbnailPath: string, 
       fs.mkdirSync(thumbDir, { recursive: true });
     }
 
-    const tempPath = `${thumbnailPath}.tmp.${Date.now()}`;
+    // Temp name must keep a .jpg extension — ffmpeg picks the muxer from the
+    // output extension, and a trailing ".tmp.<epoch>" makes it bail with
+    // "Unable to choose an output format". -f image2 is belt-and-braces.
+    const tempPath = `${thumbnailPath}.tmp.${Date.now()}.jpg`;
     logStep("Thumbnail", "FFmpeg", `Extracting frame for "${filename}" at ${timestamp}s...`);
 
     ffmpeg(videoPath)
       .seekInput(timestamp)
-      .outputOptions(['-vframes 1', '-q:v 2'])
+      .outputOptions(['-vframes 1', '-q:v 2', '-f image2', '-update 1'])
       .output(tempPath)
       .on("end", () => {
         if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 100) {

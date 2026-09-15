@@ -4,7 +4,7 @@ import WebTorrent from 'webtorrent/dist/webtorrent.min.js';
 import {
   Play, Download, Upload, Users, HardDrive, FileVideo, AlertCircle, X,
   Pause, Trash2, Share2, Copy, Check, Clock, Percent, Activity, ChevronDown, ChevronUp,
-  Radio, Zap, Globe, Sparkles, Server, Terminal, ShieldCheck
+  Globe, Sparkles, ShieldCheck, Terminal, RefreshCw
 } from 'lucide-react';
 import type { PrimaryColorKey, ThemeMode } from '../types';
 
@@ -33,8 +33,6 @@ interface TorrentItem {
   wires: any[];
   pieces: boolean[];
   announce: string[];
-  pieceLength: number;
-  createdByName?: string;
 }
 
 const FEATURED_TORRENTS = [
@@ -64,7 +62,9 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
   const [showPeers, setShowPeers] = useState(true);
   const [showPieces, setShowPieces] = useState(true);
   const [showTrackers, setShowTrackers] = useState(false);
+  const [showLogs, setShowLogs] = useState(true);
   const [dragOver, setDragOver] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
 
   const [globalStats, setGlobalStats] = useState({
     downloadSpeed: 0,
@@ -78,6 +78,11 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
   const seedInputRef = useRef<HTMLInputElement>(null);
 
   const isLight = theme === 'light';
+
+  const addLog = (msg: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [`[${timestamp}] ${msg}`, ...prev.slice(0, 49)]);
+  };
 
   const colorClasses = React.useMemo(() => {
     switch (primaryColor) {
@@ -123,6 +128,11 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
   useEffect(() => {
     const wtClient = new WebTorrent();
     setClient(wtClient);
+    addLog('WebTorrent browser engine initialized successfully.');
+
+    wtClient.on('error', (err: any) => {
+      addLog(`[Engine Error] ${err.message || err}`);
+    });
 
     const interval = setInterval(() => {
       if (wtClient) {
@@ -173,14 +183,12 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
               files: t.files || [],
               wires: wireList,
               pieces: pieceArray,
-              announce: trackers,
-              pieceLength: t.pieceLength || 0,
-              createdByName: t.createdBy || 'WebTorrent Engine'
+              announce: trackers
             };
           }));
         }
       }
-    }, 1000);
+    }, 800);
 
     return () => {
       clearInterval(interval);
@@ -209,31 +217,50 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
 
   const selectedTorrent = torrents.find(t => t.id === selectedTorrentId) || torrents[0] || null;
 
+  const wireTorrentEvents = (t: any) => {
+    const id = t.infoHash || t.magnetURI;
+    setSelectedTorrentId(id);
+    addLog(`Added torrent swarm: "${t.name || id}"`);
+
+    t.on('ready', () => {
+      addLog(`Torrent metadata ready for "${t.name}". (${t.files.length} files, ${formatBytes(t.length)})`);
+      const videoFiles = (t.files || []).filter((f: any) =>
+        f.name.endsWith('.mp4') || f.name.endsWith('.mkv') ||
+        f.name.endsWith('.webm') || f.name.endsWith('.avi') || f.name.endsWith('.mov')
+      );
+      const mainFile = videoFiles.length > 0
+        ? videoFiles.reduce((prev: any, curr: any) => (prev.length > curr.length ? prev : curr))
+        : t.files[0];
+
+      if (mainFile) {
+        setSelectedFile(mainFile);
+        addLog(`Selected main stream file: "${mainFile.name}"`);
+      }
+    });
+
+    t.on('wire', (wire: any) => {
+      addLog(`Connected to peer wire (${wire.remoteAddress || 'WebRTC Peer'})`);
+    });
+
+    t.on('done', () => {
+      addLog(`Completed torrent download for "${t.name}"! Now seeding to swarm.`);
+    });
+
+    t.on('error', (err: any) => {
+      addLog(`[Torrent Error] ${err.message || err}`);
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    });
+  };
+
   const handleAddTorrent = (torrentId: string | File) => {
     if (!client) return;
     setErrorMsg('');
 
     try {
-      client.add(torrentId, (t: any) => {
-        const id = t.infoHash || t.magnetURI;
-        setSelectedTorrentId(id);
-
-        const videoFiles = (t.files || []).filter((f: any) =>
-          f.name.endsWith('.mp4') || f.name.endsWith('.mkv') ||
-          f.name.endsWith('.webm') || f.name.endsWith('.avi') || f.name.endsWith('.mov')
-        );
-        const mainFile = videoFiles.length > 0
-          ? videoFiles.reduce((prev: any, curr: any) => (prev.length > curr.length ? prev : curr))
-          : t.files[0];
-
-        if (mainFile) {
-          setSelectedFile(mainFile);
-        }
-
-        t.on('error', (err: any) => {
-          setErrorMsg(err instanceof Error ? err.message : String(err));
-        });
+      const t = client.add(torrentId, (torrent: any) => {
+        wireTorrentEvents(torrent);
       });
+      if (t) wireTorrentEvents(t);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
     }
@@ -244,15 +271,10 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
     setErrorMsg('');
 
     try {
+      addLog(`Seeding ${files.length} local file(s) over WebRTC...`);
       client.seed(files, (t: any) => {
-        const id = t.infoHash || t.magnetURI;
-        setSelectedTorrentId(id);
-
-        const videoFiles = (t.files || []).filter((f: any) =>
-          f.name.endsWith('.mp4') || f.name.endsWith('.mkv') ||
-          f.name.endsWith('.webm') || f.name.endsWith('.avi') || f.name.endsWith('.mov')
-        );
-        if (videoFiles[0]) setSelectedFile(videoFiles[0]);
+        wireTorrentEvents(t);
+        addLog(`Generated magnet URI for seeded torrent: ${t.magnetURI}`);
       });
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
@@ -263,14 +285,17 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
     if (tItem.torrentObj) {
       if (tItem.paused) {
         tItem.torrentObj.resume();
+        addLog(`Resumed torrent: "${tItem.name}"`);
       } else {
         tItem.torrentObj.pause();
+        addLog(`Paused torrent: "${tItem.name}"`);
       }
     }
   };
 
   const removeTorrent = (tItem: TorrentItem) => {
     if (tItem.torrentObj) {
+      addLog(`Removed torrent: "${tItem.name}"`);
       tItem.torrentObj.destroy();
       if (selectedTorrentId === tItem.id) {
         setSelectedTorrentId(null);
@@ -283,12 +308,14 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
     if (tItem.magnetURI) {
       navigator.clipboard.writeText(tItem.magnetURI);
       setCopiedMagnetId(tItem.id);
+      addLog(`Copied magnet link for "${tItem.name}" to clipboard.`);
       setTimeout(() => setCopiedMagnetId(null), 2500);
     }
   };
 
   const downloadFileToDisk = (file: any) => {
     if (!file) return;
+    addLog(`Downloading "${file.name}" to local disk...`);
     file.getBlobURL((err: any, url: string) => {
       if (err || !url) return;
       const a = document.createElement('a');
@@ -302,37 +329,59 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
 
   useEffect(() => {
     if (selectedFile && videoRef.current) {
+      videoRef.current.innerHTML = '';
       selectedFile.renderTo(videoRef.current, {
         autoplay: true
+      }, (err: any) => {
+        if (err) {
+          addLog(`[Render Error] ${err.message || err}. Falling back to Blob URL...`);
+          selectedFile.getBlobURL((bErr: any, url: string) => {
+            if (!bErr && url && videoRef.current) {
+              videoRef.current.src = url;
+              videoRef.current.play().catch(() => {});
+            }
+          });
+        }
       });
     }
   }, [selectedFile]);
 
   return (
     <div className="flex-1 h-full overflow-y-auto p-6 md:p-8 custom-scrollbar flex flex-col gap-6">
-      {/* Diagnostics & Capabilities Header Banner */}
-      <div className={`border rounded-3xl p-6 md:p-8 backdrop-blur-xl relative overflow-hidden transition-all ${
-        dragOver
-          ? `${colorClasses.border} ${colorClasses.bgLight} scale-[1.01]`
-          : isLight ? 'bg-white/90 border-slate-200 shadow-sm text-slate-900' : 'bg-white/5 border-white/10 text-white'
-      }`}>
+      {/* Diagnostics & Capabilities Header Banner (No overflow-hidden to prevent clipping controls) */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            handleSeedFiles(e.dataTransfer.files);
+          }
+        }}
+        className={`border rounded-3xl p-6 md:p-8 backdrop-blur-xl relative transition-all ${
+          dragOver
+            ? `${colorClasses.border} ${colorClasses.bgLight} scale-[1.01]`
+            : isLight ? 'bg-white/90 border-slate-200 shadow-sm text-slate-900' : 'bg-white/5 border-white/10 text-white'
+        }`}
+      >
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="max-w-3xl">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className={`text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full border font-bold ${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border} flex items-center gap-1.5`}>
                 <ShieldCheck className="w-3.5 h-3.5" />
-                WebRTC Enabled
+                WebRTC Active
               </span>
               <span className={`text-[10px] font-mono px-2.5 py-1 rounded-full border ${isLight ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-white/10 text-white/80 border-white/10'}`}>
-                WebTorrent v{WebTorrent.VERSION || '2.x'} Browser Engine
+                WebTorrent Browser Client
               </span>
             </div>
 
             <h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tight mb-2">
-              WebTorrent <span className={colorClasses.text}>Streaming Suite</span>
+              WebTorrent <span className={colorClasses.text}>Streaming Engine</span>
             </h2>
             <p className={`text-sm ${isLight ? 'text-slate-600' : 'text-white/60'}`}>
-              Full in-browser BitTorrent protocol powered by WebRTC. Stream video torrents on-the-fly, seed local files, manage live peer swarms, and inspect bitfield blocks.
+              Complete in-browser P2P video streaming suite. Drag & drop files anywhere on this box to seed over WebRTC, stream magnet links live, and manage torrent swarms.
             </p>
           </div>
 
@@ -585,6 +634,17 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
                     <span>Announce Trackers ({selectedTorrent.announce.length})</span>
                     {showTrackers ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   </button>
+
+                  <button
+                    onClick={() => setShowLogs(!showLogs)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-mono border flex items-center gap-1.5 transition-colors ${
+                      showLogs ? `${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border}` : isLight ? 'bg-slate-100 text-slate-700' : 'bg-white/5 text-white/70 border-white/10'
+                    }`}
+                  >
+                    <Terminal className="w-3.5 h-3.5" />
+                    <span>Live Console Log</span>
+                    {showLogs ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
 
                 {/* Peer List View */}
@@ -648,6 +708,21 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
                           </div>
                         ))}
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Status Console Log Output */}
+                {showLogs && (
+                  <div className={`p-4 rounded-2xl border max-h-40 overflow-y-auto font-mono text-[11px] leading-relaxed ${
+                    isLight ? 'bg-slate-900 text-cyan-300 border-slate-800' : 'bg-black/80 text-cyan-400 border-white/10'
+                  }`}>
+                    {logs.length === 0 ? (
+                      <p className="opacity-40 italic">Client ready. Events will appear here...</p>
+                    ) : (
+                      logs.map((log, idx) => (
+                        <div key={idx} className="truncate">{log}</div>
+                      ))
                     )}
                   </div>
                 )}

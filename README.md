@@ -10,6 +10,7 @@ A fluid, lightweight local media server built with Express and React.
 - **Transcoding & Probe**: Uses `ffmpeg` and `ffprobe` to gather deep meta and transcode video.
 - **Sub-category Support**: Recursively scans `media/` and groups videos.
 - **Progress Tracking**: Remembers playback progress in local storage.
+- **Seamless LAN HTTP Access**: Connect directly from any device on your home network via `http://<host-ip>:3000` with zero SSL or certificate configuration.
 
 ## How It Works
 
@@ -40,7 +41,7 @@ We provide a `Dockerfile` and `docker-compose.yml` that bundles Node.js and FFmp
    ```bash
    docker-compose up -d
    ```
-3. Access the app at `http://localhost:3000`. Place your media in the `./media` directory.
+3. Access the app at `http://localhost:3000` or `http://<host-ip>:3000` from any device on your local network. Place your media in the `./media` directory.
 
 ### Option 2: Automatic AIO Installer (Windows / macOS / Linux)
 

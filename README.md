@@ -97,15 +97,18 @@ The HTTP server responds with plain text (`HTTP/1.1 200 OK`), but the browser in
 2. **Disable HTTPS-Only Mode for local IP addresses**:
    - In Firefox: `Settings` -> `Privacy & Security` -> `HTTPS-Only Mode` -> select *Don't enable HTTPS-Only Mode* or add an exception for your LAN IP.
    - In Chrome/Edge: `Settings` -> `Privacy & Security` -> `Security` -> turn off *Always use secure connections*.
-3. **Enable SSL/TLS Support on OggleBox (Optional)**:
-   If you want to serve OggleBox over HTTPS on your local network:
-   - Generate or obtain a TLS certificate (e.g. using `mkcert` or self-signed certificates).
-   - In your `.env` file, specify the key and cert paths:
-     ```env
-     SSL_KEY="./certs/server.key"
-     SSL_CERT="./certs/server.crt"
+3. **Generate a Self-Signed LAN Certificate (Automated)**:
+   We provide a helper script to generate a 10-year self-signed TLS certificate tailored for local LAN IP addresses and `localhost`:
+   - On Linux / macOS:
+     ```bash
+     chmod +x generate_cert.sh
+     ./generate_cert.sh
      ```
-   - Restart the server. OggleBox will now run natively over HTTPS (`https://192.168.1.39:3000`).
+   - On Windows:
+     ```cmd
+     generate_cert.bat
+     ```
+   This creates `certs/server.key` and `certs/server.crt`. When OggleBox detects these files (or `SSL_KEY` / `SSL_CERT` in `.env`), it automatically launches as an **HTTPS server** (`https://<LAN_IP>:3000`), resolving `SSL_ERROR_RX_RECORD_TOO_LONG` for HTTPS connections.
 
 ### Option 4: Manual Native Install (Windows)
 

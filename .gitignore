@@ -9,6 +9,9 @@ coverage/
 
 # Media & Caching
 media/
+certs/
+*.key
+*.crt
 library-cache.json
 
 # Backups

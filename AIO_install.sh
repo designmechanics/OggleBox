@@ -55,6 +55,15 @@ npm install
 
 echo ""
 echo "======================================================="
+echo " Generating LAN SSL Certificate (if needed)"
+echo "======================================================="
+if [ -f "./generate_cert.sh" ]; then
+    chmod +x ./generate_cert.sh
+    ./generate_cert.sh
+fi
+
+echo ""
+echo "======================================================="
 echo " Building OggleBox (npm run build)"
 echo "======================================================="
 npm run build

@@ -442,8 +442,11 @@ async function startServer() {
 
   const app = express();
 
-  const sslKeyPath = process.env.SSL_KEY;
-  const sslCertPath = process.env.SSL_CERT;
+  const defaultKeyPath = path.join(process.cwd(), "certs", "server.key");
+  const defaultCertPath = path.join(process.cwd(), "certs", "server.crt");
+
+  const sslKeyPath = process.env.SSL_KEY || (fs.existsSync(defaultKeyPath) ? defaultKeyPath : null);
+  const sslCertPath = process.env.SSL_CERT || (fs.existsSync(defaultCertPath) ? defaultCertPath : null);
   const isHttps = Boolean(sslKeyPath && sslCertPath && fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath));
 
   let httpServer: http.Server | https.Server;

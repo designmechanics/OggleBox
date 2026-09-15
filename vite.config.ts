@@ -18,6 +18,8 @@ export default defineConfig(() => {
       assetsInlineLimit: 0,
     },
     server: {
+      host: '0.0.0.0',
+      https: false as any,
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {
         ignored: [

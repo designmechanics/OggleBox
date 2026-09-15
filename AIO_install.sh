@@ -19,7 +19,15 @@ else
     echo "[OK] Node.js is installed: $(node -v)"
 fi
 
-# 2. Check FFmpeg
+# 2. Check Firewall (Linux ufw)
+if command -v ufw &> /dev/null; then
+    if sudo ufw status | grep -q "Status: active"; then
+        echo "[!] Active ufw firewall detected. Allowing TCP port 3000..."
+        sudo ufw allow 3000/tcp || echo "[!] Could not automatically allow port 3000 on ufw. Please ensure port 3000/tcp is open."
+    fi
+fi
+
+# 3. Check FFmpeg
 if ! command -v ffmpeg &> /dev/null; then
     echo "[!] FFmpeg not found. Attempting to install via package manager..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -73,4 +81,7 @@ echo "======================================================="
 echo " INSTALLATION COMPLETE!"
 echo "======================================================="
 echo "To start the server, run: ./start_ogglebox.sh"
+echo ""
+echo "Once started, open http://<LAN_IP>:3000 from any device on your network."
+echo "No SSL certificates or trust setup required!"
 echo ""

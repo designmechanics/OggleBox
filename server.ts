@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import https from "https";
 import http from "http";
+import os from "os";
 import { createServer as createViteServer } from "vite";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
@@ -938,8 +939,29 @@ async function startServer() {
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {
+    const interfaces = os.networkInterfaces();
+    const lanIps: string[] = [];
+    for (const devName in interfaces) {
+      const iface = interfaces[devName];
+      if (iface) {
+        for (const alias of iface) {
+          if (alias.family === "IPv4" && !alias.internal) {
+            lanIps.push(alias.address);
+          }
+        }
+      }
+    }
+
     logStep("Boot", "READY", `=======================================================`);
-    logStep("Boot", "READY", `>>> Media server active & listening on 0.0.0.0:${PORT} <<<`);
+    logStep("Boot", "READY", `>>> Media server active & listening on http://0.0.0.0:${PORT} <<<`);
+    logStep("Boot", "READY", `>>> Local Access:   http://localhost:${PORT}`);
+    if (lanIps.length > 0) {
+      lanIps.forEach(ip => {
+        logStep("Boot", "READY", `>>> Network Access: http://${ip}:${PORT}`);
+      });
+    } else {
+      logStep("Boot", "READY", `>>> Network Access: http://<your-lan-ip>:${PORT}`);
+    }
     logStep("Boot", "READY", `=======================================================`);
   });
 }

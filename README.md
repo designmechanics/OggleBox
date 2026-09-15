@@ -76,6 +76,37 @@ npm start
 ```
 *(Or use `npm run dev` for the development server).*
 
+---
+
+## 🛠️ LAN Access & Troubleshooting
+
+### Why `SSL_ERROR_RX_RECORD_TOO_LONG` occurs
+
+If you try to access the server from a remote machine (e.g. Windows 11 accessing a Linux server via `192.168.1.39:3000`) and see:
+
+> **Secure Connection Failed**
+> `SSL_ERROR_RX_RECORD_TOO_LONG`
+
+**Cause:** Modern web browsers (such as Firefox, Chrome, or Edge) often have **HTTPS-Only Mode** or automatic HTTPS upgrades enabled. When you type `192.168.1.39:3000` or select a auto-completed history entry, the browser sends an **HTTPS** request (`https://192.168.1.39:3000`) to an **HTTP-only** server.
+The HTTP server responds with plain text (`HTTP/1.1 200 OK`), but the browser interprets the `HTTP...` bytes as TLS handshake records. Because `'HT'` parses as a TLS record size of 18,484 bytes (exceeding the maximum allowed 16,384 bytes in TLS), the browser aborts with `SSL_ERROR_RX_RECORD_TOO_LONG`.
+
+### How to Fix / Avoid it:
+
+1. **Explicitly use `http://` in the browser URL bar**:
+   - Type `http://192.168.1.39:3000` (make sure to include `http://`).
+2. **Disable HTTPS-Only Mode for local IP addresses**:
+   - In Firefox: `Settings` -> `Privacy & Security` -> `HTTPS-Only Mode` -> select *Don't enable HTTPS-Only Mode* or add an exception for your LAN IP.
+   - In Chrome/Edge: `Settings` -> `Privacy & Security` -> `Security` -> turn off *Always use secure connections*.
+3. **Enable SSL/TLS Support on OggleBox (Optional)**:
+   If you want to serve OggleBox over HTTPS on your local network:
+   - Generate or obtain a TLS certificate (e.g. using `mkcert` or self-signed certificates).
+   - In your `.env` file, specify the key and cert paths:
+     ```env
+     SSL_KEY="./certs/server.key"
+     SSL_CERT="./certs/server.crt"
+     ```
+   - Restart the server. OggleBox will now run natively over HTTPS (`https://192.168.1.39:3000`).
+
 ### Option 4: Manual Native Install (Windows)
 
 *Use this option if you are **sure** your system already has FFmpeg and Node.js (v18+) installed and configured in your system PATH.*

@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import https from "https";
 import http from "http";
 import { createServer as createViteServer } from "vite";
@@ -402,6 +403,19 @@ function saveLibraryCache(videos: any[]) {
     .catch((err) => logStep("Cache", "DiskError", `Failed to save library cache: ${err.message}`));
 }
 
+function getLocalNetworkAddresses(): string[] {
+  const addresses: string[] = [];
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        addresses.push(iface.address);
+      }
+    }
+  }
+  return addresses;
+}
+
 function loadLibraryCache(): any[] | null {
   if (inMemoryLibraryCache !== null) {
     return inMemoryLibraryCache;
@@ -427,7 +441,36 @@ async function startServer() {
   const preloaded = loadLibraryCache();
 
   const app = express();
-  const httpServer = http.createServer(app);
+
+  const sslKeyPath = process.env.SSL_KEY;
+  const sslCertPath = process.env.SSL_CERT;
+  const isHttps = Boolean(sslKeyPath && sslCertPath && fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath));
+
+  let httpServer: http.Server | https.Server;
+  if (isHttps) {
+    const options = {
+      key: fs.readFileSync(sslKeyPath!),
+      cert: fs.readFileSync(sslCertPath!)
+    };
+    httpServer = https.createServer(options, app);
+    logStep("Boot", "Security", "SSL/TLS enabled via environment certificates.");
+  } else {
+    httpServer = http.createServer(app);
+    // Detect HTTPS clients connecting to HTTP port (which triggers SSL_ERROR_RX_RECORD_TOO_LONG)
+    httpServer.on("connection", (socket) => {
+      socket.once("data", (buffer) => {
+        // TLS ClientHello starts with byte 0x16 (22) and major version 0x03 (3)
+        if (buffer.length >= 3 && buffer[0] === 0x16 && buffer[1] === 0x03) {
+          logStep(
+            "SecurityWarn",
+            "SSL_Mismatch",
+            `Client from ${socket.remoteAddress} attempted HTTPS connection to HTTP port ${PORT}. ` +
+            `This causes 'SSL_ERROR_RX_RECORD_TOO_LONG'. Access the server using http:// explicitly.`
+          );
+        }
+      });
+    });
+  }
 
   app.use((req, res, next) => {
     const start = Date.now();
@@ -938,8 +981,21 @@ async function startServer() {
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {
+    const protocol = isHttps ? "https" : "http";
+    const localIps = getLocalNetworkAddresses();
+
     logStep("Boot", "READY", `=======================================================`);
     logStep("Boot", "READY", `>>> Media server active & listening on 0.0.0.0:${PORT} <<<`);
+    logStep("Boot", "READY", `Local access:     ${protocol}://localhost:${PORT}`);
+    if (localIps.length > 0) {
+      localIps.forEach((ip) => {
+        logStep("Boot", "READY", `LAN access:       ${protocol}://${ip}:${PORT}`);
+      });
+    }
+    if (!isHttps) {
+      logStep("Boot", "NOTE", `Ensure you type '${protocol}://' in your browser (not https://)`);
+      logStep("Boot", "NOTE", `To enable HTTPS, set SSL_KEY and SSL_CERT in your .env file.`);
+    }
     logStep("Boot", "READY", `=======================================================`);
   });
 }

@@ -492,23 +492,24 @@ export default function App() {
           )}
 
           {/* Main Content Area */}
-          <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
-            {activeTab === 'webtorrent' ? (
+          {activeTab === 'webtorrent' ? (
+            <main className="flex-1 w-full h-full overflow-y-auto custom-scrollbar min-h-0 relative z-10">
               <WebTorrentView 
                 theme={settings.theme} 
                 primaryColor={settings.primaryColor}
                 onPlayMedia={(mediaItem) => setActiveMedia(mediaItem)}
               />
-            ) : (
-              <>
-                {/* Category Sidebar */}
-                <CategorySidebar
-                  library={library}
-                  activeCategory={activeCategory}
-                  onSelectCategory={setActiveCategory}
-                  theme={settings.theme}
-                  primaryColor={settings.primaryColor}
-                />
+            </main>
+          ) : (
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+              {/* Category Sidebar */}
+              <CategorySidebar
+                library={library}
+                activeCategory={activeCategory}
+                onSelectCategory={setActiveCategory}
+                theme={settings.theme}
+                primaryColor={settings.primaryColor}
+              />
 
                 {/* Video Listing Container */}
                 <main className="flex-1 h-full overflow-y-auto p-6 md:p-8 custom-scrollbar">
@@ -772,9 +773,8 @@ export default function App() {
                 </div>
               )}
                 </main>
-              </>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Resume Playback Modal */}
           {showResumeModal && (

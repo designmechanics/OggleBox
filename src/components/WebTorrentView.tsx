@@ -67,6 +67,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
   const [isOrganizing, setIsOrganizing] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const magnetInputRef = useRef<HTMLInputElement>(null);
   const isLight = theme === 'light';
 
   // Fetch live torrent list from backend daemon
@@ -333,11 +334,17 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (!magnetInput.trim()) {
+              magnetInputRef.current?.focus();
+              showNotification('Please paste a magnet link (magnet:?xt=urn:btih:...) or 40-character infoHash first.', true);
+              return;
+            }
             handleAddMagnet(magnetInput);
           }}
           className="wt-input-row"
         >
           <input
+            ref={magnetInputRef}
             type="text"
             value={magnetInput}
             onChange={(e) => setMagnetInput(e.target.value)}
@@ -347,8 +354,9 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
 
           <button
             type="submit"
-            disabled={isSubmitting || !magnetInput.trim()}
+            disabled={isSubmitting}
             className="wt-btn-primary"
+            title="Add Torrent to Swarm"
           >
             <Plus style={{ width: '16px', height: '16px' }} />
             <span>{isSubmitting ? 'Adding...' : 'Add Torrent'}</span>
@@ -358,6 +366,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
             type="button"
             onClick={() => fileInputRef.current?.click()}
             className="wt-btn-secondary"
+            title="Upload local .torrent file"
           >
             <FileVideo style={{ width: '16px', height: '16px' }} />
             <span>Upload .torrent</span>
@@ -475,6 +484,9 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
               t.status === 'stopped' ? 'wt-badge-slate' :
               'wt-badge-indigo';
 
+            const isIsoOrZip = t.name.toLowerCase().endsWith('.iso') || t.name.toLowerCase().endsWith('.zip') || t.name.toLowerCase().endsWith('.tar.gz') || t.name.toLowerCase().endsWith('.rar');
+            const isAudio = t.files.some(f => f.isAudio || ['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'opus'].includes(f.name.split('.').pop()?.toLowerCase() || ''));
+
             return (
               <div key={t.id} className="wt-torrent-card">
                 {/* Main Header Row */}
@@ -501,9 +513,18 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                       </span>
                     </div>
 
-                    <h3 className="wt-torrent-name" title={t.name}>
-                      {t.name}
-                    </h3>
+                    <div className="wt-torrent-title-line">
+                      {isIsoOrZip ? (
+                        <Disc style={{ width: '18px', height: '18px', color: '#fbbf24', flexShrink: 0 }} />
+                      ) : isAudio ? (
+                        <Music style={{ width: '18px', height: '18px', color: '#818cf8', flexShrink: 0 }} />
+                      ) : (
+                        <FileVideo style={{ width: '18px', height: '18px', color: '#22d3ee', flexShrink: 0 }} />
+                      )}
+                      <h3 className="wt-torrent-name" title={t.name}>
+                        {t.name}
+                      </h3>
+                    </div>
                   </div>
 
                   {/* Middle Column: Live Bandwidth Ticker & Progress */}
@@ -532,7 +553,8 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                       className={`wt-action-btn ${t.status === 'seeding' ? 'active-green' : ''}`}
                       title="Seed Torrent (Share with swarm)"
                     >
-                      <Upload style={{ width: '14px', height: '14px' }} />
+                      <Upload style={{ width: '13px', height: '13px' }} />
+                      <span className="wt-btn-label">Seed</span>
                     </button>
 
                     {/* Pause / Resume Button */}
@@ -543,7 +565,8 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                         className="wt-action-btn active-amber"
                         title="Resume Torrent"
                       >
-                        <Play style={{ width: '14px', height: '14px', fill: 'currentColor' }} />
+                        <Play style={{ width: '13px', height: '13px', fill: 'currentColor' }} />
+                        <span className="wt-btn-label">Resume</span>
                       </button>
                     ) : (
                       <button
@@ -552,7 +575,8 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                         className="wt-action-btn"
                         title="Pause Torrent"
                       >
-                        <Pause style={{ width: '14px', height: '14px' }} />
+                        <Pause style={{ width: '13px', height: '13px' }} />
+                        <span className="wt-btn-label">Pause</span>
                       </button>
                     )}
 
@@ -563,7 +587,8 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                       className="wt-action-btn"
                       title="Stop Torrent Swarm"
                     >
-                      <Square style={{ width: '13px', height: '13px' }} />
+                      <Square style={{ width: '12px', height: '12px' }} />
+                      <span className="wt-btn-label">Stop</span>
                     </button>
 
                     {/* Move / Organize Button */}
@@ -574,7 +599,8 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                       className="wt-action-btn"
                       title="Organize / Move completed files into media/new/"
                     >
-                      <FolderDown style={{ width: '14px', height: '14px', color: isOrganizing === t.id ? '#22d3ee' : 'inherit' }} />
+                      <FolderDown style={{ width: '13px', height: '13px', color: isOrganizing === t.id ? '#22d3ee' : 'inherit' }} />
+                      <span className="wt-btn-label">{isOrganizing === t.id ? 'Moving...' : 'Move'}</span>
                     </button>
 
                     {/* Copy InfoHash / Magnet */}
@@ -584,7 +610,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                       className="wt-action-btn"
                       title="Copy InfoHash / Magnet"
                     >
-                      {copiedId === t.id ? <Check style={{ width: '14px', height: '14px', color: '#34d399' }} /> : <Copy style={{ width: '14px', height: '14px' }} />}
+                      {copiedId === t.id ? <Check style={{ width: '13px', height: '13px', color: '#34d399' }} /> : <Copy style={{ width: '13px', height: '13px' }} />}
                     </button>
 
                     {/* Delete Button */}
@@ -594,13 +620,23 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                       className="wt-action-btn danger"
                       title="Remove Torrent"
                     >
-                      <Trash2 style={{ width: '14px', height: '14px' }} />
+                      <Trash2 style={{ width: '13px', height: '13px' }} />
+                      <span className="wt-btn-label">Delete</span>
                     </button>
 
-                    {/* Details Toggle Chevron */}
-                    <div style={{ padding: '0.25rem', color: '#94a3b8' }}>
-                      {isExpanded ? <ChevronUp style={{ width: '18px', height: '18px' }} /> : <ChevronDown style={{ width: '18px', height: '18px' }} />}
-                    </div>
+                    {/* Details Toggle Chevron Button */}
+                    <button
+                      type="button"
+                      className="wt-action-btn"
+                      title={isExpanded ? "Collapse Details" : "Expand Details"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedTorrents(prev => ({ ...prev, [t.id]: !isExpanded }));
+                      }}
+                    >
+                      {isExpanded ? <ChevronUp style={{ width: '14px', height: '14px' }} /> : <ChevronDown style={{ width: '14px', height: '14px' }} />}
+                      <span className="wt-btn-label">{isExpanded ? 'Hide' : 'Details'}</span>
+                    </button>
                   </div>
                 </div>
 

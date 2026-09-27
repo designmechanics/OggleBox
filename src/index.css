@@ -671,27 +671,29 @@ button {
 }
 
 /* ==========================================================================
-   WebTorrent Suite Dedicated Component Styles (Guaranteed Render)
+   WebTorrent Suite Dedicated Component Styles (Guaranteed Render & Contrast)
    ========================================================================== */
 .wt-container {
   width: 100%;
-  max-width: 1280px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  color: #ffffff;
 }
 
 .wt-header-banner {
-  background-color: #0f172a;
-  border: 1px solid #334155;
+  background: linear-gradient(180deg, #141f38 0%, #0c1426 100%);
+  border: 1px solid #3b4963;
   border-radius: 1.25rem;
   padding: 1.5rem;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.7);
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  color: #ffffff;
 }
 
 .wt-banner-top {
@@ -725,41 +727,41 @@ button {
 }
 
 .wt-badge-emerald {
-  background-color: rgba(16, 185, 129, 0.15);
+  background-color: rgba(16, 185, 129, 0.2);
   color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.4);
+  border: 1px solid #10b981;
 }
 
 .wt-badge-cyan {
-  background-color: rgba(6, 182, 212, 0.15);
+  background-color: rgba(6, 182, 212, 0.2);
   color: #22d3ee;
-  border: 1px solid rgba(6, 182, 212, 0.4);
+  border: 1px solid #06b6d4;
 }
 
 .wt-badge-amber {
-  background-color: rgba(245, 158, 11, 0.15);
+  background-color: rgba(245, 158, 11, 0.2);
   color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.4);
+  border: 1px solid #f59e0b;
 }
 
 .wt-badge-slate {
-  background-color: rgba(71, 85, 105, 0.3);
-  color: #94a3b8;
-  border: 1px solid #475569;
+  background-color: rgba(71, 85, 105, 0.4);
+  color: #cbd5e1;
+  border: 1px solid #64748b;
 }
 
 .wt-badge-indigo {
-  background-color: rgba(99, 102, 241, 0.15);
+  background-color: rgba(99, 102, 241, 0.2);
   color: #a5b4fc;
-  border: 1px solid rgba(99, 102, 241, 0.4);
+  border: 1px solid #6366f1;
 }
 
 .wt-speed-ticker {
   display: flex;
   align-items: center;
   gap: 1.25rem;
-  background-color: #020617;
-  border: 1px solid #334155;
+  background-color: #030712;
+  border: 1px solid #3b4963;
   border-radius: 0.75rem;
   padding: 0.75rem 1.25rem;
 }
@@ -779,14 +781,14 @@ button {
 .wt-text-input {
   flex: 1;
   min-width: 280px;
-  background-color: #020617;
-  border: 1px solid #334155;
+  background-color: #030712;
+  border: 1px solid #3b4963;
   border-radius: 0.75rem;
   padding: 0.75rem 1rem;
   font-size: 0.875rem;
   color: #ffffff;
   outline: none;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .wt-text-input:focus {
@@ -807,19 +809,18 @@ button {
   background: linear-gradient(135deg, #06b6d4, #0284c7);
   border: none;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  box-shadow: 0 4px 14px rgba(6, 182, 212, 0.4);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .wt-btn-primary:hover {
   transform: translateY(-1px);
-  opacity: 0.95;
+  filter: brightness(1.1);
+  box-shadow: 0 6px 18px rgba(6, 182, 212, 0.5);
 }
 
-.wt-btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
+.wt-btn-primary:active {
+  transform: translateY(0);
 }
 
 .wt-btn-secondary {
@@ -833,13 +834,14 @@ button {
   font-size: 0.875rem;
   color: #e2e8f0;
   background-color: #1e293b;
-  border: 1px solid #334155;
+  border: 1px solid #3b4963;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .wt-btn-secondary:hover {
   background-color: #334155;
+  border-color: #64748b;
 }
 
 .wt-filter-bar {
@@ -854,8 +856,8 @@ button {
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  background-color: #0f172a;
-  border: 1px solid #334155;
+  background-color: #0c1426;
+  border: 1px solid #3b4963;
   border-radius: 0.75rem;
   padding: 0.25rem;
 }
@@ -882,22 +884,24 @@ button {
 
 .wt-filter-tab:hover:not(.active) {
   color: #ffffff;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 /* Individual Torrent Card Component */
 .wt-torrent-card {
-  background-color: #0f172a;
-  border: 1px solid #334155;
+  background: linear-gradient(180deg, #141f38 0%, #0c1426 100%);
+  border: 1px solid #3b4963;
   border-radius: 1.25rem;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
   margin-bottom: 1rem;
   overflow: hidden;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  color: #ffffff;
 }
 
 .wt-torrent-card:hover {
-  border-color: #475569;
+  border-color: #60a5fa;
+  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.7);
 }
 
 .wt-torrent-row {
@@ -906,22 +910,22 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 1.25rem 1.5rem;
-  gap: 1.5rem;
+  gap: 1.25rem;
   cursor: pointer;
-  background-color: #0f172a;
+  background: transparent;
   flex-wrap: wrap;
 }
 
 .wt-torrent-row:hover {
-  background-color: #131d36;
+  background-color: rgba(255, 255, 255, 0.03);
 }
 
 .wt-torrent-info {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
   flex: 1;
-  min-width: 250px;
+  min-width: 260px;
 }
 
 .wt-torrent-meta-top {
@@ -931,8 +935,14 @@ button {
   flex-wrap: wrap;
 }
 
+.wt-torrent-title-line {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
 .wt-torrent-name {
-  font-size: 1.0625rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: #ffffff;
   word-break: break-all;
@@ -942,10 +952,11 @@ button {
 .wt-torrent-metrics {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1.25rem;
   font-family: var(--font-mono);
   font-size: 0.8125rem;
   flex-shrink: 0;
+  color: #e2e8f0;
 }
 
 .wt-torrent-actions {
@@ -959,12 +970,15 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.25rem;
+  gap: 0.35rem;
   height: 2.25rem;
+  padding: 0 0.625rem;
   border-radius: 0.625rem;
   background-color: #1e293b;
-  border: 1px solid #334155;
+  border: 1px solid #3b4963;
   color: #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -972,32 +986,46 @@ button {
 .wt-action-btn:hover {
   background-color: #334155;
   color: #ffffff;
-  transform: scale(1.05);
+  border-color: #64748b;
+  transform: translateY(-1px);
 }
 
 .wt-action-btn.active-green {
-  background-color: rgba(16, 185, 129, 0.2);
-  border-color: rgba(16, 185, 129, 0.4);
+  background-color: rgba(16, 185, 129, 0.25);
+  border-color: #10b981;
   color: #34d399;
 }
 
 .wt-action-btn.active-amber {
-  background-color: rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.4);
+  background-color: rgba(245, 158, 11, 0.25);
+  border-color: #f59e0b;
   color: #fbbf24;
 }
 
 .wt-action-btn.danger:hover {
-  background-color: rgba(244, 63, 94, 0.2);
-  border-color: rgba(244, 63, 94, 0.4);
+  background-color: rgba(244, 63, 94, 0.25);
+  border-color: #f43f5e;
   color: #fb7185;
+}
+
+.wt-btn-label {
+  display: inline;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .wt-btn-label {
+    display: none;
+  }
 }
 
 /* Progress bar inside torrent card */
 .wt-card-progress {
   width: 100%;
-  height: 6px;
-  background-color: #1e293b;
+  height: 8px;
+  background-color: #030712;
+  border-top: 1px solid #1e293b;
+  border-bottom: 1px solid #1e293b;
   position: relative;
   overflow: hidden;
 }
@@ -1012,7 +1040,7 @@ button {
 }
 
 .wt-card-progress-bar.downloading {
-  background-color: #06b6d4;
+  background: linear-gradient(90deg, #06b6d4, #3b82f6);
 }
 
 .wt-card-progress-bar.paused {
@@ -1025,12 +1053,13 @@ button {
 
 /* Expanded inspection drawer */
 .wt-drawer {
-  background-color: #020617;
-  border-top: 1px solid #1e293b;
+  background-color: #060b17;
+  border-top: 1px solid #23314d;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
+  color: #ffffff;
 }
 
 .wt-stat-boxes {
@@ -1040,10 +1069,11 @@ button {
 }
 
 .wt-stat-box {
-  background-color: #0f172a;
-  border: 1px solid #1e293b;
+  background-color: #0f192e;
+  border: 1px solid #23314d;
   border-radius: 0.75rem;
   padding: 0.875rem 1rem;
+  color: #ffffff;
 }
 
 .wt-stat-label {
@@ -1062,13 +1092,15 @@ button {
   font-size: 1.0625rem;
   font-weight: 700;
   font-family: var(--font-mono);
+  color: #ffffff;
 }
 
 .wt-section-box {
-  background-color: #0f172a;
-  border: 1px solid #1e293b;
+  background-color: #0f192e;
+  border: 1px solid #23314d;
   border-radius: 0.75rem;
   overflow: hidden;
+  color: #ffffff;
 }
 
 .wt-section-header {
@@ -1088,12 +1120,13 @@ button {
 }
 
 .wt-section-header:hover {
-  background-color: #1e293b;
+  background-color: #1a2744;
 }
 
 .wt-section-content {
   padding: 1rem 1.25rem;
-  border-top: 1px solid #1e293b;
+  border-top: 1px solid #23314d;
+  color: #ffffff;
 }
 
 .wt-file-item {
@@ -1101,12 +1134,13 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  background-color: #020617;
-  border: 1px solid #1e293b;
+  background-color: #060b17;
+  border: 1px solid #23314d;
   border-radius: 0.625rem;
   margin-bottom: 0.5rem;
   gap: 1rem;
   flex-wrap: wrap;
+  color: #ffffff;
 }
 
 .wt-file-name {
@@ -1129,10 +1163,11 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 0.75rem;
-  background-color: #020617;
-  border: 1px solid #1e293b;
+  background-color: #060b17;
+  border: 1px solid #23314d;
   border-radius: 0.5rem;
   font-family: var(--font-mono);
   font-size: 0.75rem;
+  color: #ffffff;
 }
 

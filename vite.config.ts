@@ -28,6 +28,13 @@ export default defineConfig(() => {
           '**/.git/**',
           '**/.backups/**',
           '**/library-cache.json',
+          '**/torrents-state.json',
+          '**/*.torrent',
+          '**/*.tmp*',
+          '**/*.mp4',
+          '**/*.mkv',
+          '**/*.avi',
+          '**/*.webm'
         ]
       },
       fs: {

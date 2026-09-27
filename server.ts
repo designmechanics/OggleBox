@@ -29,6 +29,18 @@ const MEDIA_DIR = process.env.MEDIA_DIR ? path.resolve(process.env.MEDIA_DIR) : 
 const PUBLIC_DIR = path.join(process.cwd(), "public");
 const CACHE_FILE = path.join(process.cwd(), "library-cache.json");
 
+process.on("uncaughtException", (err: any) => {
+  if (err?.code === "EBUSY" || err?.code === "EPERM") {
+    console.warn(`[System] [WatcherWarn] Transient filesystem lock ignored (${err.code}): ${err.path || err.message}`);
+    return;
+  }
+  console.error("[FATAL] Uncaught Exception:", err);
+});
+
+process.on("unhandledRejection", (reason: any) => {
+  console.warn("[WARN] Unhandled Promise Rejection:", reason?.message || reason);
+});
+
 function logStep(moduleName: string, step: string, message: string, detail?: any) {
   const time = new Date().toISOString().split('T')[1].slice(0, 8);
   if (detail !== undefined) {
@@ -994,7 +1006,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/torrents/upload", express.raw({ type: "application/x-bittorrent", limit: "15mb" }), async (req, res) => {
+  app.post("/api/torrents/upload", express.raw({ type: "*/*", limit: "30mb" }), async (req, res) => {
     try {
       if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
         return res.status(400).json({ error: "No torrent binary received" });

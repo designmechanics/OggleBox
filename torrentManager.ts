@@ -67,7 +67,42 @@ function savePersistedState() {
   }
 }
 
+export function findTorrent(idOrInfoHash: string): any | null {
+  if (!client || !client.torrents) return null;
+  const clean = String(idOrInfoHash).toLowerCase().trim();
+  return client.torrents.find((t: any) => {
+    if (!t) return false;
+    if (t.infoHash && t.infoHash.toLowerCase() === clean) return true;
+    if (t.magnetURI && t.magnetURI.toLowerCase().includes(clean)) return true;
+    if (t.name && t.name.toLowerCase() === clean) return true;
+    return false;
+  }) || null;
+}
+
 function formatTorrentModel(t: any): TorrentItem {
+  if (!t || typeof t !== 'object') {
+    return {
+      id: 'unknown',
+      name: 'Resolving torrent...',
+      infoHash: '',
+      magnetURI: '',
+      progress: 0,
+      downloadSpeed: 0,
+      uploadSpeed: 0,
+      numPeers: 0,
+      downloaded: 0,
+      length: 0,
+      lengthFormatted: '0 B',
+      timeRemaining: 0,
+      ratio: 0,
+      paused: false,
+      isSeeding: false,
+      status: 'metadata',
+      savePath: torrentsDirectory,
+      files: []
+    };
+  }
+
   const pieceLength = t.pieceLength || 0;
   const numPieces = t.pieces ? t.pieces.length : 0;
   let downloadedPieces = 0;
@@ -112,9 +147,9 @@ function formatTorrentModel(t: any): TorrentItem {
   }
 
   return {
-    id: t.infoHash,
+    id: t.infoHash || String(Math.random()),
     name: t.name || 'Resolving torrent metadata...',
-    infoHash: t.infoHash,
+    infoHash: t.infoHash || '',
     magnetURI: t.magnetURI || '',
     progress: parseFloat(((t.progress || 0) * 100).toFixed(1)),
     downloadSpeed: t.downloadSpeed || 0,
@@ -189,6 +224,8 @@ export async function initTorrentManager(
 }
 
 function attachTorrentListeners(torrent: any) {
+  if (!torrent) return;
+
   torrent.on('ready', () => {
     logTorrent('Ready', `Metadata received for "${torrent.name}" (${(torrent.files || []).length} files, ${formatBytes(torrent.length)})`);
     savePersistedState();
@@ -226,9 +263,11 @@ function addTorrentInternal(
     }
 
     try {
-      const existing = client.get(torrentId);
-      if (existing) {
-        return resolve(existing);
+      if (typeof torrentId === 'string') {
+        const existing = findTorrent(torrentId);
+        if (existing) {
+          return resolve(existing);
+        }
       }
 
       const torrent = client.add(torrentId, { path: torrentsDirectory }, (t: any) => {
@@ -239,16 +278,39 @@ function addTorrentInternal(
           t.pause();
         }
         savePersistedState();
-        resolve(t);
       });
+
+      if (!torrent) {
+        return reject(new Error('Failed to create torrent instance'));
+      }
 
       torrent._category = category;
       torrent._addedAt = addedAt || new Date().toISOString();
+      attachTorrentListeners(torrent);
 
-      torrent.on('error', (err: any) => {
-        logTorrent('AddError', `Failed to add torrent: ${err.message}`);
-        reject(err);
-      });
+      if (torrent.ready) {
+        resolve(torrent);
+      } else {
+        let resolved = false;
+        torrent.once('ready', () => {
+          if (!resolved) {
+            resolved = true;
+            resolve(torrent);
+          }
+        });
+        torrent.once('error', (err: any) => {
+          if (!resolved) {
+            resolved = true;
+            reject(err);
+          }
+        });
+        setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            resolve(torrent);
+          }
+        }, 1500);
+      }
     } catch (err: any) {
       reject(err);
     }
@@ -269,15 +331,13 @@ export function getAllTorrents(): TorrentItem[] {
 }
 
 export function getTorrentById(id: string): TorrentItem | null {
-  if (!client || !client.torrents) return null;
-  const torrent = client.get(id);
+  const torrent = findTorrent(id);
   return torrent ? formatTorrentModel(torrent) : null;
 }
 
 export function pauseTorrent(id: string): boolean {
-  if (!client) return false;
-  const torrent = client.get(id);
-  if (torrent) {
+  const torrent = findTorrent(id);
+  if (torrent && typeof torrent.pause === 'function') {
     torrent.pause();
     savePersistedState();
     logTorrent('Pause', `Paused torrent: "${torrent.name}"`);
@@ -287,9 +347,8 @@ export function pauseTorrent(id: string): boolean {
 }
 
 export function resumeTorrent(id: string): boolean {
-  if (!client) return false;
-  const torrent = client.get(id);
-  if (torrent) {
+  const torrent = findTorrent(id);
+  if (torrent && typeof torrent.resume === 'function') {
     torrent.resume();
     savePersistedState();
     logTorrent('Resume', `Resumed torrent: "${torrent.name}"`);
@@ -300,8 +359,7 @@ export function resumeTorrent(id: string): boolean {
 
 export function removeTorrent(id: string, deleteFiles = false): Promise<boolean> {
   return new Promise((resolve) => {
-    if (!client) return resolve(false);
-    const torrent = client.get(id);
+    const torrent = findTorrent(id);
     if (!torrent) return resolve(false);
 
     const torrentName = torrent.name;
@@ -332,8 +390,7 @@ export function removeTorrent(id: string, deleteFiles = false): Promise<boolean>
 }
 
 export function getTorrentFileResolvedPath(torrentId: string, fileIndex: number): string | null {
-  if (!client) return null;
-  const torrent = client.get(torrentId);
+  const torrent = findTorrent(torrentId);
   if (!torrent || !torrent.files || !torrent.files[fileIndex]) return null;
 
   const file = torrent.files[fileIndex];
@@ -342,8 +399,7 @@ export function getTorrentFileResolvedPath(torrentId: string, fileIndex: number)
 }
 
 export function getTorrentFile(torrentId: string, fileIndex: number): any | null {
-  if (!client) return null;
-  const torrent = client.get(torrentId);
+  const torrent = findTorrent(torrentId);
   if (!torrent || !torrent.files || !torrent.files[fileIndex]) return null;
   return torrent.files[fileIndex];
 }
@@ -358,7 +414,7 @@ export function streamTorrentFile(
     return res.status(503).send('Torrent engine not initialized');
   }
 
-  const torrent = client.get(torrentId);
+  const torrent = findTorrent(torrentId);
   if (!torrent || !torrent.files || !torrent.files[fileIndex]) {
     return res.status(404).send('Torrent or file not found');
   }
@@ -394,7 +450,7 @@ export function streamTorrentFile(
       return res.end();
     }
 
-    const chunksize = (end - start) + 1;
+    const chunksize = end - start + 1;
     const stream = file.createReadStream({ start, end });
 
     req.on('close', () => {

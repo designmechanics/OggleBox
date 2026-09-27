@@ -296,7 +296,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
               <span
                 className={`text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full border font-bold ${colorClasses.badge} flex items-center gap-1.5`}
               >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block shrink-0" />
                 Backend Node.js Daemon Active
               </span>
               <span
@@ -398,6 +398,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
               accept=".torrent"
               onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
               className="hidden"
+              style={{ display: 'none' }}
             />
           </form>
 
@@ -525,8 +526,13 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                           >
                             {t.status}
                           </span>
-                          <span className="text-xs font-mono opacity-50">
+                          <span className="opacity-30 text-xs">•</span>
+                          <span className="text-xs font-mono opacity-60">
                             {t.files.length} {t.files.length === 1 ? 'file' : 'files'}
+                          </span>
+                          <span className="opacity-30 text-xs">•</span>
+                          <span className="text-xs font-mono opacity-60">
+                            {t.lengthFormatted}
                           </span>
                         </div>
                         <h3 className="text-base font-bold truncate max-w-xl">{t.name}</h3>
@@ -619,19 +625,25 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                     )}
 
                     {/* Progress Bar */}
-                    <div className="space-y-1.5">
+                    <div className="flex flex-col gap-1.5">
                       <div className="flex items-center justify-between text-xs font-mono">
-                        <span className="font-bold">{t.progress}%</span>
+                        <span className="font-bold flex items-center gap-1.5">
+                          <span>{t.progress}%</span>
+                          {t.status === 'seeding' && (
+                            <span className="text-[10px] text-emerald-400 font-normal">• Seeding Complete</span>
+                          )}
+                        </span>
                         <span className="opacity-60">{formatETA(t.timeRemaining)}</span>
                       </div>
                       <div
                         className={`w-full h-2 rounded-full overflow-hidden ${
                           isLight ? 'bg-slate-200' : 'bg-black/40'
                         }`}
+                        style={{ height: '8px' }}
                       >
                         <div
-                          className={`h-full transition-all duration-300 ${colorClasses.bg}`}
-                          style={{ width: `${Math.min(100, Math.max(0, t.progress))}%` }}
+                          className={`h-full transition-all duration-300 ${t.status === 'seeding' ? 'bg-emerald-400' : colorClasses.bg}`}
+                          style={{ width: `${Math.min(100, Math.max(0, t.progress))}%`, height: '100%' }}
                         />
                       </div>
                     </div>
@@ -719,10 +731,13 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                                 <span className="truncate font-medium">{file.name}</span>
                               </div>
 
-                              <div className="flex items-center gap-3 shrink-0 font-mono text-[11px]">
-                                <span className="opacity-60">{file.lengthFormatted}</span>
+                              <div className="flex items-center gap-2 shrink-0 font-mono text-[11px]">
+                                <span className="opacity-70">{file.lengthFormatted}</span>
                                 {file.progress !== undefined && (
-                                  <span className="opacity-60">{file.progress}%</span>
+                                  <>
+                                    <span className="opacity-30">•</span>
+                                    <span className="opacity-70">{file.progress}%</span>
+                                  </>
                                 )}
 
                                 {file.isVideo && onPlayMedia && (

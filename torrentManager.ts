@@ -3,7 +3,10 @@ import fs from 'fs';
 import type express from 'express';
 import type { TorrentItem, TorrentFileItem } from './types';
 
-const VIDEO_EXTENSIONS = [".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".flv", ".ts", ".wmv"];
+export const VIDEO_EXTENSIONS = [".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".flv", ".ts", ".wmv"];
+export const AUDIO_EXTENSIONS = [".mp3", ".flac", ".wav", ".aac", ".m4a", ".ogg", ".wma", ".opus"];
+export const OTHER_EXTENSIONS = [".iso", ".img", ".zip", ".rar", ".7z", ".tar", ".gz", ".bin", ".exe", ".dmg"];
+export const ALL_MEDIA_EXTENSIONS = [...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS, ...OTHER_EXTENSIONS];
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes === 0) return "0 B";
@@ -116,6 +119,12 @@ function formatTorrentModel(t: any): TorrentItem {
   const fileList: TorrentFileItem[] = (t.files || []).map((f: any, index: number) => {
     const ext = path.extname(f.name || '').toLowerCase();
     const isVideo = VIDEO_EXTENSIONS.includes(ext);
+    const isAudio = AUDIO_EXTENSIONS.includes(ext);
+    const isBinary = OTHER_EXTENSIONS.includes(ext);
+    let fileType: 'video' | 'audio' | 'binary' | 'other' = 'other';
+    if (isVideo) fileType = 'video';
+    else if (isAudio) fileType = 'audio';
+    else if (isBinary) fileType = 'binary';
 
     return {
       index,
@@ -126,6 +135,8 @@ function formatTorrentModel(t: any): TorrentItem {
       downloaded: f.downloaded || (t.done ? f.length : 0),
       progress: f.progress !== undefined ? parseFloat((f.progress * 100).toFixed(1)) : (t.done ? 100 : 0),
       isVideo,
+      isAudio,
+      fileType,
       streamUrl: `/api/torrents/${t.infoHash}/stream/${index}`
     };
   });
@@ -137,8 +148,10 @@ function formatTorrentModel(t: any): TorrentItem {
     uploadSpeed: typeof w.uploadSpeed === 'function' ? w.uploadSpeed() : (w.uploadSpeed || 0)
   }));
 
-  let status: 'downloading' | 'seeding' | 'paused' | 'metadata' | 'error' = 'downloading';
-  if (t.paused) {
+  let status: 'downloading' | 'seeding' | 'paused' | 'stopped' | 'metadata' | 'error' = 'downloading';
+  if (t._stopped) {
+    status = 'stopped';
+  } else if (t.paused) {
     status = 'paused';
   } else if (t.done || t.progress === 1) {
     status = 'seeding';
@@ -235,15 +248,10 @@ function attachTorrentListeners(torrent: any) {
     logTorrent('Done', `Torrent completed: "${torrent.name}"!`);
     savePersistedState();
 
-    if (onCompleteCallback && torrent.files) {
-      const videoFiles = torrent.files
-        .filter((f: any) => VIDEO_EXTENSIONS.includes(path.extname(f.name).toLowerCase()))
-        .map((f: any) => path.join('media', 'Torrents', f.path || f.name).replace(/\\/g, '/'));
-
-      if (videoFiles.length > 0) {
-        onCompleteCallback(videoFiles);
-      }
-    }
+    // Auto organize completed files into media/new/ or media/new/other/
+    organizeCompletedTorrentFiles(torrent).catch((err) => {
+      logTorrent('AutoOrganizeError', err?.message || String(err));
+    });
   });
 
   torrent.on('error', (err: any) => {
@@ -355,6 +363,113 @@ export function resumeTorrent(id: string): boolean {
     return true;
   }
   return false;
+}
+
+export function seedTorrent(id: string): boolean {
+  const torrent = findTorrent(id);
+  if (torrent) {
+    delete torrent._stopped;
+    if (typeof torrent.resume === 'function') {
+      torrent.resume();
+    }
+    savePersistedState();
+    logTorrent('Seed', `Resumed seeding for "${torrent.name}"`);
+    return true;
+  }
+  return false;
+}
+
+export function stopTorrent(id: string): boolean {
+  const torrent = findTorrent(id);
+  if (torrent) {
+    torrent._stopped = true;
+    if (typeof torrent.pause === 'function') {
+      torrent.pause();
+    }
+    savePersistedState();
+    logTorrent('Stop', `Stopped torrent swarm for "${torrent.name}"`);
+    return true;
+  }
+  return false;
+}
+
+export async function organizeCompletedTorrentFiles(torrentIdOrTorrent: any): Promise<{ moved: string[]; errors: string[] }> {
+  const torrent = typeof torrentIdOrTorrent === 'string' ? findTorrent(torrentIdOrTorrent) : torrentIdOrTorrent;
+  const moved: string[] = [];
+  const errors: string[] = [];
+  if (!torrent || !torrent.files || torrent.files.length === 0) {
+    return { moved, errors };
+  }
+
+  const newMediaDir = path.join(mediaDirectory, 'new');
+  const newOtherDir = path.join(mediaDirectory, 'new', 'other');
+
+  if (!fs.existsSync(newMediaDir)) fs.mkdirSync(newMediaDir, { recursive: true });
+  if (!fs.existsSync(newOtherDir)) fs.mkdirSync(newOtherDir, { recursive: true });
+
+  const rootTorrentDir = torrent.path || torrentsDirectory;
+
+  for (const file of torrent.files) {
+    const rawPath = file.path || file.name;
+    const ext = path.extname(rawPath).toLowerCase();
+    const fileName = path.basename(rawPath);
+
+    // Candidates on disk
+    const candidates = [
+      path.join(rootTorrentDir, rawPath),
+      path.join(rootTorrentDir, fileName),
+      path.join(torrentsDirectory, rawPath),
+      path.join(torrentsDirectory, fileName)
+    ];
+
+    const sourcePath = candidates.find(p => fs.existsSync(p) && fs.statSync(p).size > 0);
+    if (!sourcePath) {
+      logTorrent('OrganizeWarn', `Source file not found on disk for "${rawPath}"`);
+      continue;
+    }
+
+    // Classification:
+    // ISO, ZIP, archive, binary -> media/new/other/
+    // Video or Audio file -> media/new/
+    const isOther = OTHER_EXTENSIONS.includes(ext);
+    const targetDir = isOther ? newOtherDir : newMediaDir;
+    const targetPath = path.join(targetDir, fileName);
+
+    try {
+      if (fs.existsSync(targetPath) && fs.statSync(targetPath).size === fs.statSync(sourcePath).size) {
+        logTorrent('Organize', `File already in target: "${targetPath}"`);
+        moved.push(targetPath);
+        continue;
+      }
+
+      // Hardlink first (instant, 0 disk cost, keeps seeding intact)
+      let placed = false;
+      try {
+        fs.linkSync(sourcePath, targetPath);
+        placed = true;
+        logTorrent('Organize', `Hardlinked "${fileName}" -> ${targetDir}`);
+      } catch (linkErr) {
+        fs.copyFileSync(sourcePath, targetPath);
+        placed = true;
+        logTorrent('Organize', `Copied "${fileName}" -> ${targetDir}`);
+      }
+
+      if (placed) {
+        moved.push(targetPath);
+      }
+    } catch (e: any) {
+      logTorrent('OrganizeError', `Failed to move/link "${fileName}": ${e.message}`);
+      errors.push(`${fileName}: ${e.message}`);
+    }
+  }
+
+  // Notify callback with relative paths
+  if (onCompleteCallback && moved.length > 0) {
+    const relFiles = moved.map(p => path.relative(process.cwd(), p).replace(/\\/g, '/'));
+    onCompleteCallback(relFiles);
+  }
+
+  return { moved, errors };
 }
 
 export function removeTorrent(id: string, deleteFiles = false): Promise<boolean> {

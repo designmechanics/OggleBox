@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { Play, Info, Settings, Loader2, Search, X, RefreshCw, FileText, Calendar, HardDrive, LayoutGrid, List, Heart, Clock, SortAsc, SortDesc, Zap, Volume2, VolumeX, Radio } from 'lucide-react';
+import { Play, Info, Settings, Loader2, Search, X, RefreshCw, FileText, Calendar, HardDrive, LayoutGrid, List, Heart, Clock, SortAsc, SortDesc, Zap, Volume2, VolumeX, Radio, Music, Disc, Download } from 'lucide-react';
 import type { MediaItem, AppSettings, PrimaryColorKey, ThemeMode } from './types';
 import VideoPlayer from './components/VideoPlayer';
 import CategorySidebar from './components/CategorySidebar';
@@ -529,6 +529,8 @@ export default function App() {
                     const savedPercent = localStorage.getItem(`motionstream_progress_percent_${item.id}`);
                     const hasProgress = savedTime && !isNaN(parseFloat(savedTime)) && parseFloat(savedTime) > 0;
                     const progressWidth = savedPercent && !isNaN(parseFloat(savedPercent)) ? `${parseFloat(savedPercent)}%` : '0%';
+                    const isAudio = item.mediaType === 'audio';
+                    const isBinary = item.mediaType === 'binary';
                     
                     return (
                       <div 
@@ -538,14 +540,36 @@ export default function App() {
                             ? 'bg-white border-slate-200 hover:border-slate-300 shadow-sm' 
                             : 'bg-white/5 backdrop-blur-xl border-white/10 hover:border-cyan-500/50'
                         }`}
-                        onClick={() => openPlayer(item)}
+                        onClick={() => {
+                          if (isBinary) {
+                            setSelectedDetailMedia(item);
+                          } else {
+                            openPlayer(item);
+                          }
+                        }}
                       >
-                        <img 
-                          src={item.poster} 
-                          alt={item.title} 
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          loading="lazy"
-                        />
+                        {isAudio ? (
+                          <div className="w-full h-full bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 flex flex-col items-center justify-center p-3 group-hover:scale-105 transition-transform duration-500">
+                            <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:bg-indigo-500/30 transition-colors">
+                              <Music className="w-6 h-6 text-indigo-400 group-hover:scale-110 transition-transform" />
+                            </div>
+                            <span className="text-[9px] font-mono text-indigo-300 font-bold uppercase tracking-wider mt-2">Audio Track</span>
+                          </div>
+                        ) : isBinary ? (
+                          <div className="w-full h-full bg-gradient-to-br from-amber-950 via-slate-900 to-orange-950 flex flex-col items-center justify-center p-3 group-hover:scale-105 transition-transform duration-500">
+                            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:bg-amber-500/30 transition-colors">
+                              <Disc className="w-6 h-6 text-amber-400 group-hover:scale-110 transition-transform" />
+                            </div>
+                            <span className="text-[9px] font-mono text-amber-300 font-bold uppercase tracking-wider mt-2">ISO / Archive</span>
+                          </div>
+                        ) : (
+                          <img 
+                            src={item.poster} 
+                            alt={item.title} 
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            loading="lazy"
+                          />
+                        )}
                         
                         {item.category && item.category !== 'Root' && (
                           <div className="absolute top-2 left-2 right-12 z-30 pointer-events-none">
@@ -578,17 +602,28 @@ export default function App() {
                         {/* Title Bar */}
                         <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/90 via-black/60 to-transparent transition-opacity duration-300 group-hover:opacity-0 pointer-events-none z-10 flex flex-col justify-end">
                           <h3 className="text-xs font-bold truncate text-white">{item.title}</h3>
-                          <p className="text-[10px] text-white/60 font-mono mt-0.5">{item.sizeFormatted || 'MP4'} • {item.format || 'MP4'}</p>
+                          <p className="text-[10px] text-white/60 font-mono mt-0.5">{item.sizeFormatted || 'N/A'} • {item.format || (isAudio ? 'AUDIO' : isBinary ? 'BIN' : 'MP4')}</p>
                         </div>
 
-                        {/* Hover Play Overlay */}
+                        {/* Hover Play / Action Overlay */}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center z-20">
-                          <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colorClasses.gradient} flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform duration-300`}>
-                            <Play className="w-4 h-4 text-white fill-white ml-0.5" />
-                          </div>
+                          {isBinary ? (
+                            <div className="px-3 py-1.5 rounded-full bg-amber-500 text-black font-bold text-xs flex items-center gap-1.5 shadow-lg transform scale-90 group-hover:scale-100 transition-transform duration-300">
+                              <Info className="w-3.5 h-3.5" />
+                              <span>Details</span>
+                            </div>
+                          ) : isAudio ? (
+                            <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/50 transform scale-90 group-hover:scale-100 transition-transform duration-300">
+                              <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                            </div>
+                          ) : (
+                            <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colorClasses.gradient} flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform duration-300`}>
+                              <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                            </div>
+                          )}
                         </div>
 
-                        {hasProgress && (
+                        {hasProgress && !isBinary && (
                           <div className="absolute bottom-0 left-0 w-full h-1 bg-white/20 z-30">
                             <div className={`h-full ${colorClasses.bg}`} style={{ width: progressWidth }}></div>
                           </div>
@@ -605,6 +640,8 @@ export default function App() {
                     const savedPercent = localStorage.getItem(`motionstream_progress_percent_${item.id}`);
                     const hasProgress = savedTime && !isNaN(parseFloat(savedTime)) && parseFloat(savedTime) > 0;
                     const progressWidth = savedPercent && !isNaN(parseFloat(savedPercent)) ? `${parseFloat(savedPercent)}%` : '0%';
+                    const isAudio = item.mediaType === 'audio';
+                    const isBinary = item.mediaType === 'binary';
 
                     return (
                       <div 
@@ -614,22 +651,55 @@ export default function App() {
                             ? 'bg-white border-slate-200 hover:border-slate-300' 
                             : 'bg-white/5 backdrop-blur-xl border-white/10 hover:border-white/20 hover:bg-white/10'
                         }`}
-                        onClick={() => openPlayer(item)}
+                        onClick={() => {
+                          if (isBinary) {
+                            setSelectedDetailMedia(item);
+                          } else {
+                            openPlayer(item);
+                          }
+                        }}
                       >
                         {/* Thumbnail */}
                         <div className="relative w-full sm:w-44 h-36 sm:h-auto flex-shrink-0 bg-black overflow-hidden group">
-                          <img 
-                            src={item.poster} 
-                            alt={item.title} 
-                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                            loading="lazy"
-                          />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colorClasses.gradient} flex items-center justify-center shadow-lg`}>
-                              <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                          {isAudio ? (
+                            <div className="w-full h-full min-h-[140px] bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 flex flex-col items-center justify-center p-3">
+                              <div className="w-12 h-12 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:bg-indigo-500/30 transition-colors">
+                                <Music className="w-6 h-6 text-indigo-400 group-hover:scale-110 transition-transform" />
+                              </div>
+                              <span className="text-[9px] font-mono text-indigo-300 font-bold uppercase tracking-wider mt-2">Audio Track</span>
                             </div>
+                          ) : isBinary ? (
+                            <div className="w-full h-full min-h-[140px] bg-gradient-to-br from-amber-950 via-slate-900 to-orange-950 flex flex-col items-center justify-center p-3">
+                              <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:bg-amber-500/30 transition-colors">
+                                <Disc className="w-6 h-6 text-amber-400 group-hover:scale-110 transition-transform" />
+                              </div>
+                              <span className="text-[9px] font-mono text-amber-300 font-bold uppercase tracking-wider mt-2">ISO / Archive</span>
+                            </div>
+                          ) : (
+                            <img 
+                              src={item.poster} 
+                              alt={item.title} 
+                              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              loading="lazy"
+                            />
+                          )}
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            {isBinary ? (
+                              <div className="px-3 py-1.5 rounded-full bg-amber-500 text-black font-bold text-xs flex items-center gap-1.5 shadow-lg transform scale-90 group-hover:scale-100 transition-transform duration-300">
+                                <Info className="w-3.5 h-3.5" />
+                                <span>Details</span>
+                              </div>
+                            ) : isAudio ? (
+                              <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/50 transform scale-90 group-hover:scale-100 transition-transform duration-300">
+                                <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                              </div>
+                            ) : (
+                              <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colorClasses.gradient} flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform duration-300`}>
+                                <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                              </div>
+                            )}
                           </div>
-                          {hasProgress && (
+                          {hasProgress && !isBinary && (
                             <div className="absolute bottom-0 left-0 w-full h-1 bg-white/20 z-30">
                               <div className={`h-full ${colorClasses.bg}`} style={{ width: progressWidth }}></div>
                             </div>
@@ -763,8 +833,20 @@ export default function App() {
                 </button>
 
                 <div className="flex items-center gap-4">
-                  <div className="w-20 h-28 rounded-xl overflow-hidden relative border border-white/10 shrink-0 bg-black">
-                    <img src={selectedDetailMedia.poster} alt={selectedDetailMedia.title} className="w-full h-full object-cover" />
+                  <div className="w-20 h-28 rounded-xl overflow-hidden relative border border-white/10 shrink-0 bg-black flex items-center justify-center">
+                    {selectedDetailMedia.mediaType === 'audio' ? (
+                      <div className="w-full h-full bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 flex flex-col items-center justify-center p-2 text-center">
+                        <Music className="w-8 h-8 text-indigo-400 mb-1" />
+                        <span className="text-[8px] font-mono text-indigo-300 uppercase font-bold">Audio Track</span>
+                      </div>
+                    ) : selectedDetailMedia.mediaType === 'binary' ? (
+                      <div className="w-full h-full bg-gradient-to-br from-amber-950 via-slate-900 to-orange-950 flex flex-col items-center justify-center p-2 text-center">
+                        <Disc className="w-8 h-8 text-amber-400 mb-1" />
+                        <span className="text-[8px] font-mono text-amber-300 uppercase font-bold">ISO / Archive</span>
+                      </div>
+                    ) : (
+                      <img src={selectedDetailMedia.poster} alt={selectedDetailMedia.title} className="w-full h-full object-cover" />
+                    )}
                   </div>
                   <div className="overflow-hidden">
                     <span className={`text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded border ${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border}`}>
@@ -799,17 +881,41 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      const item = selectedDetailMedia;
-                      setSelectedDetailMedia(null);
-                      openPlayer(item);
-                    }}
-                    className={`flex-1 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:opacity-90 transition-opacity bg-gradient-to-r ${colorClasses.gradient}`}
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>Play Video</span>
-                  </button>
+                  {selectedDetailMedia.mediaType === 'binary' ? (
+                    <a
+                      href={selectedDetailMedia.url}
+                      download={selectedDetailMedia.filename}
+                      className="flex-1 text-black font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:opacity-90 transition-opacity bg-gradient-to-r from-amber-400 to-amber-500"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download File</span>
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const item = selectedDetailMedia;
+                        setSelectedDetailMedia(null);
+                        openPlayer(item);
+                      }}
+                      className={`flex-1 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:opacity-90 transition-opacity ${
+                        selectedDetailMedia.mediaType === 'audio'
+                          ? 'bg-gradient-to-r from-indigo-500 to-purple-600'
+                          : `bg-gradient-to-r ${colorClasses.gradient}`
+                      }`}
+                    >
+                      {selectedDetailMedia.mediaType === 'audio' ? (
+                        <>
+                          <Music className="w-4 h-4" />
+                          <span>Play Audio</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 fill-current" />
+                          <span>Play Video</span>
+                        </>
+                      )}
+                    </button>
+                  )}
 
                   <button
                     onClick={() => {
@@ -824,16 +930,18 @@ export default function App() {
                     <span>DEEP Meta</span>
                   </button>
 
-                  <button
-                    onClick={() => handleRegenerateThumbnail(selectedDetailMedia)}
-                    disabled={regenerating}
-                    className={`font-medium py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors border ${
-                      isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
-                    }`}
-                    title="Regenerate Poster Thumbnail"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${regenerating ? `animate-spin ${colorClasses.text}` : ''}`} />
-                  </button>
+                  {selectedDetailMedia.mediaType !== 'audio' && selectedDetailMedia.mediaType !== 'binary' && (
+                    <button
+                      onClick={() => handleRegenerateThumbnail(selectedDetailMedia)}
+                      disabled={regenerating}
+                      className={`font-medium py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors border ${
+                        isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
+                      }`}
+                      title="Regenerate Poster Thumbnail"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${regenerating ? `animate-spin ${colorClasses.text}` : ''}`} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

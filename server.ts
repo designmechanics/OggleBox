@@ -15,10 +15,17 @@ import {
   addTorrent,
   pauseTorrent,
   resumeTorrent,
+  seedTorrent,
+  stopTorrent,
   removeTorrent,
   streamTorrentFile,
   getTorrentFileResolvedPath,
-  getTorrentFile
+  getTorrentFile,
+  organizeCompletedTorrentFiles,
+  VIDEO_EXTENSIONS,
+  AUDIO_EXTENSIONS,
+  OTHER_EXTENSIONS,
+  ALL_MEDIA_EXTENSIONS
 } from "./torrentManager";
 
 ffmpeg.setFfmpegPath(ffmpegStatic as string);
@@ -346,8 +353,6 @@ async function generateThumbnail(videoPath: string, thumbnailPath: string, filen
   return success;
 }
 
-const VIDEO_EXTENSIONS = [".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".flv", ".ts", ".wmv"];
-
 async function scanDirectoryForVideos(dirPath: string): Promise<string[]> {
   let results: string[] = [];
   try {
@@ -362,7 +367,7 @@ async function scanDirectoryForVideos(dirPath: string): Promise<string[]> {
         results = results.concat(subResults);
       } else {
         const ext = path.extname(dirent.name).toLowerCase();
-        if (VIDEO_EXTENSIONS.includes(ext)) {
+        if (ALL_MEDIA_EXTENSIONS.includes(ext)) {
           const relPath = path.relative(process.cwd(), fullPath).replace(/\\/g, '/');
           results.push(relPath);
         }
@@ -388,7 +393,8 @@ async function buildLibraryFromFiles(files: string[]): Promise<any[]> {
     const batchResults = await Promise.all(batch.map(async (file) => {
       const fullPath = path.join(process.cwd(), file);
       const baseName = path.basename(file, path.extname(file));
-      const ext = path.extname(file).replace('.', '').toUpperCase();
+      const extRaw = path.extname(file).toLowerCase();
+      const ext = extRaw.replace('.', '').toUpperCase();
       const relParts = file.split('/');
       
       const thumbnailRelPath = file.replace(/\.[^/.]+$/, ".jpg");
@@ -403,6 +409,13 @@ async function buildLibraryFromFiles(files: string[]): Promise<any[]> {
       let category = "Root";
       if (relParts.length > 2) {
         category = relParts.slice(1, -1).join('/');
+      }
+
+      let mediaType: 'video' | 'audio' | 'binary' = 'video';
+      if (AUDIO_EXTENSIONS.includes(extRaw)) {
+        mediaType = 'audio';
+      } else if (OTHER_EXTENSIONS.includes(extRaw)) {
+        mediaType = 'binary';
       }
       
       let stats = { size: 0, mtime: new Date() };
@@ -422,8 +435,9 @@ async function buildLibraryFromFiles(files: string[]): Promise<any[]> {
         sizeFormatted: formatBytes(stats.size),
         modifiedAt: new Date(stats.mtime).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
         format: ext,
-        description: "",
-        poster: hasThumbnail ? `/${thumbnailRelPath}` : "/placeholder.jpg"
+        description: mediaType === 'audio' ? 'Sound / Audio Track' : (mediaType === 'binary' ? 'Binary / Archive File' : ''),
+        poster: hasThumbnail ? `/${thumbnailRelPath}` : "/placeholder.jpg",
+        mediaType
       };
     }));
     results.push(...batchResults);
@@ -467,14 +481,28 @@ async function startServer() {
 
   logStep("Boot", "TorrentEngine", "Starting background BitTorrent engine...");
   initTorrentManager(MEDIA_DIR, async (completedFiles) => {
-    logStep("TorrentEngine", "AutoIndex", `Auto-indexing ${completedFiles.length} completed torrent video(s)...`);
+    logStep("TorrentEngine", "AutoIndex", `Auto-indexing ${completedFiles.length} completed torrent file(s)...`);
     try {
+      // For any video files, ensure thumbnail is generated
+      for (const relFile of completedFiles) {
+        const ext = path.extname(relFile).toLowerCase();
+        if (VIDEO_EXTENSIONS.includes(ext)) {
+          const fullPath = path.join(process.cwd(), relFile);
+          const thumbRelPath = relFile.replace(/\.[^/.]+$/, ".jpg");
+          const thumbFullPath = path.join(process.cwd(), thumbRelPath);
+          if (!fs.existsSync(thumbFullPath) || fs.statSync(thumbFullPath).size < 100) {
+            logStep("TorrentEngine", "AutoThumb", `Generating thumbnail for "${relFile}"...`);
+            await generateThumbnail(fullPath, thumbFullPath, relFile);
+          }
+        }
+      }
+
       const mediaFiles = await scanDirectoryForVideos(MEDIA_DIR);
       const publicFiles = await scanDirectoryForVideos(PUBLIC_DIR);
       const files = Array.from(new Set([...mediaFiles, ...publicFiles]));
-      const videos = await buildLibraryFromFiles(files);
-      saveLibraryCache(videos);
-      logStep("TorrentEngine", "AutoIndexOK", `Library updated with ${videos.length} items.`);
+      const items = await buildLibraryFromFiles(files);
+      saveLibraryCache(items);
+      logStep("TorrentEngine", "AutoIndexOK", `Library updated with ${items.length} items.`);
     } catch (e: any) {
       logStep("TorrentEngine", "AutoIndexWarn", `Failed to auto-index: ${e.message}`);
     }
@@ -905,6 +933,18 @@ async function startServer() {
     else if (ext === ".ts") contentType = "video/mp2t";
     else if (ext === ".flv") contentType = "video/x-flv";
     else if (ext === ".wmv") contentType = "video/x-ms-wmv";
+    else if (ext === ".mp3") contentType = "audio/mpeg";
+    else if (ext === ".flac") contentType = "audio/flac";
+    else if (ext === ".wav") contentType = "audio/wav";
+    else if (ext === ".aac") contentType = "audio/aac";
+    else if (ext === ".m4a") contentType = "audio/mp4";
+    else if (ext === ".ogg") contentType = "audio/ogg";
+    else if (ext === ".opus") contentType = "audio/opus";
+    else if (ext === ".iso") contentType = "application/x-iso9660-image";
+    else if (ext === ".zip") contentType = "application/zip";
+    else if (ext === ".rar") contentType = "application/x-rar-compressed";
+    else if (ext === ".7z") contentType = "application/x-7z-compressed";
+    else if (ext === ".bin") contentType = "application/octet-stream";
 
     if (range) {
       const parts = range.replace(/bytes=/, "").split("-");
@@ -1028,6 +1068,31 @@ async function startServer() {
   app.post("/api/torrents/:id/resume", (req, res) => {
     const ok = resumeTorrent(req.params.id);
     res.json({ status: ok ? "success" : "not_found" });
+  });
+
+  app.post("/api/torrents/:id/seed", (req, res) => {
+    const ok = seedTorrent(req.params.id);
+    res.json({ status: ok ? "success" : "not_found" });
+  });
+
+  app.post("/api/torrents/:id/stop", (req, res) => {
+    const ok = stopTorrent(req.params.id);
+    res.json({ status: ok ? "success" : "not_found" });
+  });
+
+  app.post("/api/torrents/:id/move-to-new", async (req, res) => {
+    try {
+      const result = await organizeCompletedTorrentFiles(req.params.id);
+      // Trigger library scan
+      const mediaFiles = await scanDirectoryForVideos(MEDIA_DIR);
+      const publicFiles = await scanDirectoryForVideos(PUBLIC_DIR);
+      const files = Array.from(new Set([...mediaFiles, ...publicFiles]));
+      const items = await buildLibraryFromFiles(files);
+      saveLibraryCache(items);
+      res.json({ status: "success", moved: result.moved, errors: result.errors, count: items.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   app.delete("/api/torrents/:id", async (req, res) => {

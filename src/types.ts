@@ -12,6 +12,7 @@ export type MediaItem = {
   format?: string;
   description: string;
   poster: string;
+  mediaType?: 'video' | 'audio' | 'binary';
 };
 
 export type DeepMeta = {
@@ -68,6 +69,8 @@ export type TorrentFileItem = {
   downloaded: number;
   progress: number;
   isVideo: boolean;
+  isAudio?: boolean;
+  fileType?: 'video' | 'audio' | 'binary' | 'other';
   streamUrl: string;
 };
 
@@ -87,7 +90,7 @@ export type TorrentItem = {
   ratio: number;
   paused: boolean;
   isSeeding: boolean;
-  status: 'downloading' | 'seeding' | 'paused' | 'metadata' | 'error';
+  status: 'downloading' | 'seeding' | 'paused' | 'stopped' | 'metadata' | 'error';
   savePath: string;
   files: TorrentFileItem[];
   wires?: { address: string; client: string; downloadSpeed: number; uploadSpeed: number }[];

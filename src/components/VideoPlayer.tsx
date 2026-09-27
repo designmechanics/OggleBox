@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { AudioWaveform, SlidersHorizontal, ArrowLeft, Play, Pause, Maximize, Volume2, VolumeX, Loader2, SkipBack, SkipForward, RotateCcw, RotateCw, Repeat, X, Download } from 'lucide-react';
+import { AudioWaveform, SlidersHorizontal, ArrowLeft, Play, Pause, Maximize, Volume2, VolumeX, Loader2, SkipBack, SkipForward, RotateCcw, RotateCw, Repeat, X, Download, Music } from 'lucide-react';
 import type { MediaItem } from '../types';
 
 
@@ -40,7 +40,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   // --- NEW COMPLEX FEATURES ---
   const [showFilters, setShowFilters] = useState(false);
   const [videoFilters, setVideoFilters] = useState({ brightness: 100, contrast: 100, saturation: 100, sepia: 0, hue: 0 });
-  const [showVisualiser, setShowVisualiser] = useState(false);
+  const [showVisualiser, setShowVisualiser] = useState(item.mediaType === 'audio');
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -149,6 +149,9 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     let cancelled = false;
     setCapabilityChecked(false);
     setTranscodeStartTime(0);
+    if (item.mediaType === 'audio') {
+      setShowVisualiser(true);
+    }
 
     let cleanPath = item.path || item.url || '';
     cleanPath = cleanPath.replace(/^\/api\/stream\//, '').replace(/^\/api\/transcode\//, '').replace(/^transcode\//, '').replace(/^\/+/, '');
@@ -714,6 +717,27 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         {toastMessage && (
           <div className="absolute top-8 left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-black/70 backdrop-blur-md text-cyan-400 border border-cyan-500/30 font-mono text-sm uppercase px-5 py-2 rounded-full shadow-lg shadow-cyan-500/10 transition-all">
             {toastMessage}
+          </div>
+        )}
+
+        {/* Audio Mode Central Visual Hub */}
+        {item.mediaType === 'audio' && (
+          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10 p-6">
+            <div className="bg-slate-950/85 backdrop-blur-2xl px-10 py-8 rounded-3xl border border-indigo-500/30 flex flex-col items-center shadow-2xl shadow-indigo-500/20 max-w-md w-full text-center">
+              <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500/30 to-purple-500/30 border border-indigo-400/40 flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/20">
+                <Music className="w-12 h-12 text-indigo-400 animate-pulse" />
+              </div>
+              <h2 className="text-2xl font-black text-white mb-1.5 truncate max-w-full drop-shadow-md">{item.title}</h2>
+              <p className="text-indigo-300 font-mono text-xs uppercase tracking-widest truncate max-w-full">{item.filename}</p>
+              <div className="flex items-center gap-2 mt-4">
+                <span className="px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[10px] font-mono uppercase tracking-wider font-bold">
+                  Audio Track • {item.format || 'MP3'}
+                </span>
+                <span className="px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-[10px] font-mono uppercase tracking-wider font-bold">
+                  Visualizer Active
+                </span>
+              </div>
+            </div>
           </div>
         )}
 

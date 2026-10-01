@@ -1,38 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-// @ts-ignore
-import WebTorrent from 'webtorrent/dist/webtorrent.min.js';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Play, Download, Upload, Users, HardDrive, FileVideo, AlertCircle, X,
-  Pause, Trash2, Share2, Copy, Check, Clock, Percent, Activity, ChevronDown, ChevronUp,
-  Globe, Sparkles, ShieldCheck, Terminal, RefreshCw
+  Pause, Trash2, Copy, Check, Clock, Percent, Activity, ChevronDown, ChevronUp,
+  Radio, Zap, Globe, Sparkles, Server, Terminal, ShieldCheck, RefreshCw, Plus, FolderDown
 } from 'lucide-react';
-import type { PrimaryColorKey, ThemeMode } from '../types';
+import type { PrimaryColorKey, ThemeMode, TorrentItem, TorrentFileItem, MediaItem } from '../types';
 
 interface WebTorrentViewProps {
   theme: ThemeMode;
   primaryColor: PrimaryColorKey;
-}
-
-interface TorrentItem {
-  id: string;
-  name: string;
-  infoHash: string;
-  magnetURI: string;
-  progress: number;
-  downloadSpeed: number;
-  uploadSpeed: number;
-  numPeers: number;
-  downloaded: number;
-  length: number;
-  timeRemaining: number;
-  ratio: number;
-  paused: boolean;
-  isSeeding: boolean;
-  torrentObj: any;
-  files: any[];
-  wires: any[];
-  pieces: boolean[];
-  announce: string[];
+  onPlayMedia?: (item: MediaItem) => void;
 }
 
 const FEATURED_TORRENTS = [
@@ -50,41 +27,44 @@ const FEATURED_TORRENTS = [
   }
 ];
 
-export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewProps) {
-  const [torrentInput, setTorrentInput] = useState('');
-  const [client, setClient] = useState<any>(null);
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function formatETA(ms: number): string {
+  if (!ms || !isFinite(ms) || ms <= 0) return 'Done / Idle';
+  const seconds = Math.floor(ms / 1000);
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: WebTorrentViewProps) {
   const [torrents, setTorrents] = useState<TorrentItem[]>([]);
   const [selectedTorrentId, setSelectedTorrentId] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [filterTab, setFilterTab] = useState<'all' | 'downloading' | 'seeding' | 'paused'>('all');
+  
+  const [magnetInput, setMagnetInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const [errorMsg, setErrorMsg] = useState('');
-  const [copiedMagnetId, setCopiedMagnetId] = useState<string | null>(null);
-  const [showPeers, setShowPeers] = useState(true);
-  const [showPieces, setShowPieces] = useState(true);
-  const [showTrackers, setShowTrackers] = useState(false);
-  const [showLogs, setShowLogs] = useState(true);
-  const [dragOver, setDragOver] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({});
+  const [expandedPeers, setExpandedPeers] = useState<Record<string, boolean>>({});
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const [globalStats, setGlobalStats] = useState({
-    downloadSpeed: 0,
-    uploadSpeed: 0,
-    progress: 0,
-    ratio: 0
-  });
-
-  const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const seedInputRef = useRef<HTMLInputElement>(null);
-
   const isLight = theme === 'light';
 
-  const addLog = (msg: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [`[${timestamp}] ${msg}`, ...prev.slice(0, 49)]);
-  };
-
-  const colorClasses = React.useMemo(() => {
+  const colorClasses = useMemo(() => {
     switch (primaryColor) {
       case 'pink':
         return {
@@ -93,7 +73,8 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
           bgLight: 'bg-pink-500/10',
           border: 'border-pink-500/30',
           gradient: 'from-pink-400 to-rose-600',
-          ring: 'focus:ring-pink-500/50'
+          ring: 'focus:ring-pink-500/50',
+          badge: 'bg-pink-500/20 text-pink-300 border-pink-500/30'
         };
       case 'emerald':
         return {
@@ -102,7 +83,8 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
           bgLight: 'bg-emerald-500/10',
           border: 'border-emerald-500/30',
           gradient: 'from-emerald-400 to-teal-600',
-          ring: 'focus:ring-emerald-500/50'
+          ring: 'focus:ring-emerald-500/50',
+          badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
         };
       case 'amber':
         return {
@@ -111,7 +93,8 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
           bgLight: 'bg-amber-500/10',
           border: 'border-amber-500/30',
           gradient: 'from-amber-400 to-orange-600',
-          ring: 'focus:ring-amber-500/50'
+          ring: 'focus:ring-amber-500/50',
+          badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30'
         };
       default:
         return {
@@ -120,310 +103,268 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
           bgLight: 'bg-cyan-500/10',
           border: 'border-cyan-500/30',
           gradient: 'from-cyan-400 to-indigo-600',
-          ring: 'focus:ring-cyan-500/50'
+          ring: 'focus:ring-cyan-500/50',
+          badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
         };
     }
   }, [primaryColor]);
 
-  useEffect(() => {
-    const wtClient = new WebTorrent();
-    setClient(wtClient);
-    addLog('WebTorrent browser engine initialized successfully.');
-
-    wtClient.on('error', (err: any) => {
-      addLog(`[Engine Error] ${err.message || err}`);
-    });
-
-    const interval = setInterval(() => {
-      if (wtClient) {
-        setGlobalStats({
-          downloadSpeed: wtClient.downloadSpeed || 0,
-          uploadSpeed: wtClient.uploadSpeed || 0,
-          progress: wtClient.progress || 0,
-          ratio: wtClient.ratio || 0
-        });
-
-        if (wtClient.torrents) {
-          setTorrents(wtClient.torrents.map((t: any) => {
-            const pieceArray: boolean[] = [];
-            if (t.pieces) {
-              const numPieces = t.pieces.length || 0;
-              for (let i = 0; i < numPieces; i++) {
-                const isDownloaded = typeof t.pieces.get === 'function' ? Boolean(t.pieces.get(i)) : Boolean(t.pieces[i]);
-                pieceArray.push(isDownloaded);
-              }
-            }
-
-            const wireList = (t.wires || []).map((w: any) => ({
-              peerId: w.peerId || 'Unknown',
-              address: w.remoteAddress || 'WebRTC Peer',
-              client: w.clientName || 'WebTorrent Client',
-              downloadSpeed: typeof w.downloadSpeed === 'function' ? w.downloadSpeed() : (w.downloadSpeed || 0),
-              uploadSpeed: typeof w.uploadSpeed === 'function' ? w.uploadSpeed() : (w.uploadSpeed || 0)
-            }));
-
-            const trackers = (t.announce || []).map((tr: string) => String(tr));
-
-            return {
-              id: t.infoHash || t.magnetURI || String(Math.random()),
-              name: t.name || 'Unnamed Torrent',
-              infoHash: t.infoHash || 'N/A',
-              magnetURI: t.magnetURI || '',
-              progress: Math.round((t.progress || 0) * 100),
-              downloadSpeed: t.downloadSpeed || 0,
-              uploadSpeed: t.uploadSpeed || 0,
-              numPeers: t.numPeers || 0,
-              downloaded: t.downloaded || 0,
-              length: t.length || 0,
-              timeRemaining: t.timeRemaining || 0,
-              ratio: t.ratio || 0,
-              paused: t.paused || false,
-              isSeeding: t.progress === 1,
-              torrentObj: t,
-              files: t.files || [],
-              wires: wireList,
-              pieces: pieceArray,
-              announce: trackers
-            };
-          }));
+  // Fetch live torrent list from backend daemon
+  const fetchTorrents = async () => {
+    try {
+      const res = await fetch('/api/torrents');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setTorrents(data);
+          if (!selectedTorrentId && data.length > 0) {
+            setSelectedTorrentId(data[0].id);
+          }
         }
       }
-    }, 800);
-
-    return () => {
-      clearInterval(interval);
-      wtClient.destroy();
-    };
-  }, []);
-
-  const formatBytes = (bytes: number): string => {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    } catch (err) {
+      console.warn('Failed to poll torrent daemon:', err);
+    }
   };
 
-  const formatETA = (ms: number): string => {
-    if (!ms || !isFinite(ms) || ms <= 0) return 'Done / N/A';
-    const seconds = Math.floor(ms / 1000);
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    const h = Math.floor(m / 60);
-    if (h > 0) return `${h}h ${m % 60}m`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
+  useEffect(() => {
+    fetchTorrents();
+    const interval = setInterval(fetchTorrents, 1500);
+    return () => clearInterval(interval);
+  }, [selectedTorrentId]);
+
+  const showNotification = (msg: string, isError = false) => {
+    if (isError) {
+      setErrorMessage(msg);
+      setTimeout(() => setErrorMessage(null), 5000);
+    } else {
+      setActionSuccess(msg);
+      setTimeout(() => setActionSuccess(null), 4000);
+    }
   };
 
-  const selectedTorrent = torrents.find(t => t.id === selectedTorrentId) || torrents[0] || null;
-
-  const wireTorrentEvents = (t: any) => {
-    const id = t.infoHash || t.magnetURI;
-    setSelectedTorrentId(id);
-    addLog(`Added torrent swarm: "${t.name || id}"`);
-
-    t.on('ready', () => {
-      addLog(`Torrent metadata ready for "${t.name}". (${t.files.length} files, ${formatBytes(t.length)})`);
-      const videoFiles = (t.files || []).filter((f: any) =>
-        f.name.endsWith('.mp4') || f.name.endsWith('.mkv') ||
-        f.name.endsWith('.webm') || f.name.endsWith('.avi') || f.name.endsWith('.mov')
-      );
-      const mainFile = videoFiles.length > 0
-        ? videoFiles.reduce((prev: any, curr: any) => (prev.length > curr.length ? prev : curr))
-        : t.files[0];
-
-      if (mainFile) {
-        setSelectedFile(mainFile);
-        addLog(`Selected main stream file: "${mainFile.name}"`);
-      }
-    });
-
-    t.on('wire', (wire: any) => {
-      addLog(`Connected to peer wire (${wire.remoteAddress || 'WebRTC Peer'})`);
-    });
-
-    t.on('done', () => {
-      addLog(`Completed torrent download for "${t.name}"! Now seeding to swarm.`);
-    });
-
-    t.on('error', (err: any) => {
-      addLog(`[Torrent Error] ${err.message || err}`);
-      setErrorMsg(err instanceof Error ? err.message : String(err));
-    });
-  };
-
-  const handleAddTorrent = (torrentId: string | File) => {
-    if (!client) return;
-    setErrorMsg('');
+  // Add Magnet Link
+  const handleAddMagnet = async (magnetURI: string) => {
+    if (!magnetURI.trim()) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
 
     try {
-      const t = client.add(torrentId, (torrent: any) => {
-        wireTorrentEvents(torrent);
+      const res = await fetch('/api/torrents/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ magnetURI: magnetURI.trim(), category: 'Torrents' })
       });
-      if (t) wireTorrentEvents(t);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : String(err));
-    }
-  };
 
-  const handleSeedFiles = (files: FileList | File[]) => {
-    if (!client || !files || files.length === 0) return;
-    setErrorMsg('');
-
-    try {
-      addLog(`Seeding ${files.length} local file(s) over WebRTC...`);
-      client.seed(files, (t: any) => {
-        wireTorrentEvents(t);
-        addLog(`Generated magnet URI for seeded torrent: ${t.magnetURI}`);
-      });
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const togglePauseTorrent = (tItem: TorrentItem) => {
-    if (tItem.torrentObj) {
-      if (tItem.paused) {
-        tItem.torrentObj.resume();
-        addLog(`Resumed torrent: "${tItem.name}"`);
-      } else {
-        tItem.torrentObj.pause();
-        addLog(`Paused torrent: "${tItem.name}"`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to add torrent');
       }
+
+      showNotification(`Added torrent: ${data.torrent?.name || 'Swarm added'}`);
+      setMagnetInput('');
+      await fetchTorrents();
+      if (data.torrent?.id) setSelectedTorrentId(data.torrent.id);
+    } catch (err: any) {
+      showNotification(err.message || 'Error adding magnet link', true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const removeTorrent = (tItem: TorrentItem) => {
-    if (tItem.torrentObj) {
-      addLog(`Removed torrent: "${tItem.name}"`);
-      tItem.torrentObj.destroy();
-      if (selectedTorrentId === tItem.id) {
-        setSelectedTorrentId(null);
-        setSelectedFile(null);
-      }
-    }
-  };
-
-  const copyMagnet = (tItem: TorrentItem) => {
-    if (tItem.magnetURI) {
-      navigator.clipboard.writeText(tItem.magnetURI);
-      setCopiedMagnetId(tItem.id);
-      addLog(`Copied magnet link for "${tItem.name}" to clipboard.`);
-      setTimeout(() => setCopiedMagnetId(null), 2500);
-    }
-  };
-
-  const downloadFileToDisk = (file: any) => {
+  // Upload .torrent file
+  const handleFileUpload = async (file: File) => {
     if (!file) return;
-    addLog(`Downloading "${file.name}" to local disk...`);
-    file.getBlobURL((err: any, url: string) => {
-      if (err || !url) return;
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    });
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const res = await fetch('/api/torrents/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-bittorrent' },
+        body: arrayBuffer
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to upload .torrent file');
+      }
+
+      showNotification(`Loaded torrent file: ${file.name}`);
+      await fetchTorrents();
+      if (data.torrent?.id) setSelectedTorrentId(data.torrent.id);
+    } catch (err: any) {
+      showNotification(err.message || 'Error uploading .torrent file', true);
+    } finally {
+      setIsSubmitting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
-  useEffect(() => {
-    if (selectedFile && videoRef.current) {
-      videoRef.current.innerHTML = '';
-      selectedFile.renderTo(videoRef.current, {
-        autoplay: true
-      }, (err: any) => {
-        if (err) {
-          addLog(`[Render Error] ${err.message || err}. Falling back to Blob URL...`);
-          selectedFile.getBlobURL((bErr: any, url: string) => {
-            if (!bErr && url && videoRef.current) {
-              videoRef.current.src = url;
-              videoRef.current.play().catch(() => {});
-            }
-          });
-        }
-      });
+  const handlePause = async (id: string) => {
+    try {
+      await fetch(`/api/torrents/${id}/pause`, { method: 'POST' });
+      fetchTorrents();
+    } catch (err) {}
+  };
+
+  const handleResume = async (id: string) => {
+    try {
+      await fetch(`/api/torrents/${id}/resume`, { method: 'POST' });
+      fetchTorrents();
+    } catch (err) {}
+  };
+
+  const handleDelete = async (id: string, deleteFiles: boolean) => {
+    try {
+      await fetch(`/api/torrents/${id}?deleteFiles=${deleteFiles}`, { method: 'DELETE' });
+      showNotification(`Removed torrent ${deleteFiles ? 'and deleted files' : ''}`);
+      setDeleteConfirmId(null);
+      if (selectedTorrentId === id) setSelectedTorrentId(null);
+      fetchTorrents();
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to remove torrent', true);
     }
-  }, [selectedFile]);
+  };
+
+  const handleImportToLibrary = async (id: string) => {
+    try {
+      const res = await fetch(`/api/torrents/${id}/import`, { method: 'POST' });
+      const data = await res.json();
+      showNotification(`Library synced: ${data.count} items active`);
+    } catch (err: any) {
+      showNotification('Failed to sync with media library', true);
+    }
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Launch video in flagship VideoPlayer component
+  const streamInFlagshipPlayer = (torrent: TorrentItem, file: TorrentFileItem) => {
+    if (!onPlayMedia) return;
+
+    const ext = file.name.split('.').pop()?.toUpperCase() || 'MP4';
+    const syntheticMedia: MediaItem = {
+      id: `torrent_${torrent.id}_${file.index}`,
+      filename: file.name,
+      path: file.path,
+      category: torrent.category || 'Torrents',
+      url: `/api/torrents/${torrent.id}/stream/${file.index}`,
+      title: file.name.replace(/\.[^/.]+$/, ''),
+      year: new Date().getFullYear(),
+      size: file.length,
+      sizeFormatted: file.lengthFormatted,
+      format: ext,
+      description: `BitTorrent Stream • Swarm: ${torrent.name}`,
+      poster: '/public/sample-big-buck-bunny.jpg'
+    };
+
+    onPlayMedia(syntheticMedia);
+  };
+
+  // Aggregate stats
+  const totalDownloadSpeed = torrents.reduce((acc, t) => acc + (t.downloadSpeed || 0), 0);
+  const totalUploadSpeed = torrents.reduce((acc, t) => acc + (t.uploadSpeed || 0), 0);
+  const totalDownloaded = torrents.reduce((acc, t) => acc + (t.downloaded || 0), 0);
+
+  // Filtered torrent list
+  const filteredTorrents = torrents.filter((t) => {
+    if (filterTab === 'downloading') return t.status === 'downloading' || t.status === 'metadata';
+    if (filterTab === 'seeding') return t.status === 'seeding';
+    if (filterTab === 'paused') return t.status === 'paused';
+    return true;
+  });
+
+  const selectedTorrent = torrents.find((t) => t.id === selectedTorrentId) || torrents[0] || null;
 
   return (
     <div className="flex-1 h-full overflow-y-auto p-6 md:p-8 custom-scrollbar flex flex-col gap-6">
-      {/* Diagnostics & Capabilities Header Banner (No overflow-hidden to prevent clipping controls) */}
+      {/* Top Banner: Daemon Telemetry & Torrent Input */}
       <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            handleSeedFiles(e.dataTransfer.files);
-          }
-        }}
-        className={`border rounded-3xl p-6 md:p-8 backdrop-blur-xl relative transition-all ${
-          dragOver
-            ? `${colorClasses.border} ${colorClasses.bgLight} scale-[1.01]`
-            : isLight ? 'bg-white/90 border-slate-200 shadow-sm text-slate-900' : 'bg-white/5 border-white/10 text-white'
+        className={`border rounded-3xl p-6 md:p-8 backdrop-blur-xl relative overflow-hidden transition-all ${
+          isLight ? 'bg-white/90 border-slate-200 shadow-sm text-slate-900' : 'bg-white/5 border-white/10 text-white'
         }`}
       >
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="max-w-3xl">
+          <div className="max-w-2xl">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <span className={`text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full border font-bold ${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border} flex items-center gap-1.5`}>
-                <ShieldCheck className="w-3.5 h-3.5" />
-                WebRTC Active
+              <span
+                className={`text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full border font-bold ${colorClasses.badge} flex items-center gap-1.5`}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Backend Node.js Daemon Active
               </span>
-              <span className={`text-[10px] font-mono px-2.5 py-1 rounded-full border ${isLight ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-white/10 text-white/80 border-white/10'}`}>
-                WebTorrent Browser Client
+              <span
+                className={`text-[10px] font-mono px-2.5 py-1 rounded-full border ${
+                  isLight ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-white/10 text-white/80 border-white/10'
+                }`}
+              >
+                TCP / UDP / DHT Swarm Enabled
+              </span>
+              <span
+                className={`text-[10px] font-mono px-2.5 py-1 rounded-full border ${
+                  isLight ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-white/10 text-white/80 border-white/10'
+                }`}
+              >
+                Saves to: ./media/Torrents
               </span>
             </div>
 
             <h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tight mb-2">
-              WebTorrent <span className={colorClasses.text}>Streaming Engine</span>
+              BitTorrent <span className={colorClasses.text}>Engine Suite</span>
             </h2>
             <p className={`text-sm ${isLight ? 'text-slate-600' : 'text-white/60'}`}>
-              Complete in-browser P2P video streaming suite. Drag & drop files anywhere on this box to seed over WebRTC, stream magnet links live, and manage torrent swarms.
+              High-throughput Node.js BitTorrent client with sequential piece streaming, persistent background downloads, on-the-fly FFmpeg transcoding, and automatic media library indexing.
             </p>
           </div>
 
-          {/* Global Session Stats */}
-          <div className={`p-4 rounded-2xl border flex items-center gap-5 text-xs font-mono shrink-0 ${
-            isLight ? 'bg-slate-100 border-slate-300' : 'bg-black/40 border-white/10'
-          }`}>
-            <div className="flex items-center gap-2">
-              <Download className={`w-4 h-4 ${colorClasses.text}`} />
+          {/* Session Bandwidth Counter */}
+          <div
+            className={`p-4 rounded-2xl border flex items-center gap-5 text-xs font-mono shrink-0 ${
+              isLight ? 'bg-slate-100 border-slate-300' : 'bg-black/40 border-white/10'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className={`p-2 rounded-xl ${colorClasses.bgLight} ${colorClasses.text}`}>
+                <Download className="w-4 h-4" />
+              </div>
               <div>
-                <p className="text-[10px] opacity-60 uppercase">Session Down</p>
-                <p className="font-bold">{formatBytes(globalStats.downloadSpeed)}/s</p>
+                <p className="text-[10px] opacity-60 uppercase">Swarm Inbound</p>
+                <p className="font-bold text-sm">{formatBytes(totalDownloadSpeed)}/s</p>
               </div>
             </div>
-            <div className="w-px h-8 bg-white/10" />
-            <div className="flex items-center gap-2">
-              <Upload className={`w-4 h-4 ${colorClasses.text}`} />
+            <div className={`w-px h-8 ${isLight ? 'bg-slate-300' : 'bg-white/10'}`} />
+            <div className="flex items-center gap-2.5">
+              <div className={`p-2 rounded-xl ${colorClasses.bgLight} ${colorClasses.text}`}>
+                <Upload className="w-4 h-4" />
+              </div>
               <div>
-                <p className="text-[10px] opacity-60 uppercase">Session Up</p>
-                <p className="font-bold">{formatBytes(globalStats.uploadSpeed)}/s</p>
+                <p className="text-[10px] opacity-60 uppercase">Swarm Outbound</p>
+                <p className="font-bold text-sm">{formatBytes(totalUploadSpeed)}/s</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Input Bar & Seeding Actions */}
+        {/* Action Bar: Magnet Input & Torrent Upload */}
         <div className="mt-6 flex flex-col gap-4">
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (torrentInput.trim()) {
-                handleAddTorrent(torrentInput.trim());
-                setTorrentInput('');
-              }
+              handleAddMagnet(magnetInput);
             }}
             className="flex flex-col sm:flex-row gap-3"
           >
             <input
               type="text"
-              value={torrentInput}
-              onChange={(e) => setTorrentInput(e.target.value)}
-              placeholder="Paste magnet link (magnet:?xt=urn:btih:...)..."
+              value={magnetInput}
+              onChange={(e) => setMagnetInput(e.target.value)}
+              placeholder="Paste magnet link (magnet:?xt=urn:btih:...) or 40-char infoHash..."
               className={`flex-1 border rounded-2xl px-4 py-3 text-sm focus:outline-none transition-all ${
                 isLight
                   ? 'bg-slate-100 border-slate-300 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-400'
@@ -433,11 +374,11 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
 
             <button
               type="submit"
-              disabled={!torrentInput.trim()}
+              disabled={isSubmitting || !magnetInput.trim()}
               className={`font-bold px-6 py-3 rounded-2xl flex items-center justify-center gap-2 text-white shadow-lg transition-all disabled:opacity-50 bg-gradient-to-r ${colorClasses.gradient}`}
             >
-              <Play className="w-4 h-4 fill-current" />
-              <span>Stream Magnet</span>
+              <Plus className="w-4 h-4" />
+              <span>{isSubmitting ? 'Adding...' : 'Add Torrent'}</span>
             </button>
 
             <button
@@ -448,26 +389,20 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
               }`}
             >
               <FileVideo className="w-4 h-4" />
-              <span>Open .torrent</span>
+              <span>Upload .torrent</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => seedInputRef.current?.click()}
-              className={`font-medium px-5 py-3 rounded-2xl flex items-center justify-center gap-2 border transition-colors ${
-                colorClasses.bgLight
-              } ${colorClasses.text} ${colorClasses.border}`}
-            >
-              <Share2 className="w-4 h-4" />
-              <span>Seed Local File</span>
-            </button>
-
-            <input ref={fileInputRef} type="file" accept=".torrent" onChange={(e) => e.target.files?.[0] && handleAddTorrent(e.target.files[0])} className="hidden" />
-            <input ref={seedInputRef} type="file" multiple onChange={(e) => e.target.files && handleSeedFiles(e.target.files)} className="hidden" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".torrent"
+              onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
+              className="hidden"
+            />
           </form>
 
-          {/* One-Click Featured Open Torrents */}
-          <div className="flex items-center gap-2 pt-2 flex-wrap">
+          {/* Instant Open Source Demos */}
+          <div className="flex items-center gap-2 pt-1 flex-wrap">
             <span className="text-xs font-mono font-bold opacity-70 flex items-center gap-1 mr-1">
               <Sparkles className={`w-3.5 h-3.5 ${colorClasses.text}`} />
               Instant Demos:
@@ -475,7 +410,7 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
             {FEATURED_TORRENTS.map((demo, idx) => (
               <button
                 key={idx}
-                onClick={() => handleAddTorrent(demo.magnet)}
+                onClick={() => handleAddMagnet(demo.magnet)}
                 className={`text-xs px-3 py-1.5 rounded-xl border font-medium transition-all hover:scale-105 flex items-center gap-1.5 ${
                   isLight
                     ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
@@ -488,366 +423,448 @@ export default function WebTorrentView({ theme, primaryColor }: WebTorrentViewPr
             ))}
           </div>
 
-          {errorMsg && (
-            <div className="mt-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+          {/* Success & Error Notifications */}
+          {actionSuccess && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2 animate-fadeIn">
+              <Check className="w-4 h-4 shrink-0" />
+              <span>{actionSuccess}</span>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2 animate-fadeIn">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{errorMsg}</span>
+              <span>{errorMessage}</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Main Grid: Multi-Torrent Dashboard & Video Player */}
+      {/* Main Grid: Torrent Dashboard & Details View */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Player & Active Torrent Details */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          {/* HTML5 Video Container */}
-          <div className={`aspect-video rounded-3xl overflow-hidden border bg-black relative flex items-center justify-center shadow-2xl ${
-            isLight ? 'border-slate-300' : 'border-white/10'
-          }`}>
-            <video ref={videoRef} controls className="w-full h-full object-contain" />
-            {!selectedFile && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-white/40 gap-3 p-6 text-center">
-                <FileVideo className="w-16 h-16 stroke-1 opacity-50" />
-                <p className="text-sm">Select a video file from an active torrent or click an instant demo above to start streaming.</p>
-              </div>
-            )}
+        {/* Left Column (2 Cols): Active Torrents Swarm Dashboard */}
+        <div className="lg:col-span-2 flex flex-col gap-4">
+          {/* Filter Bar */}
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div
+              className={`flex items-center p-1 rounded-2xl border text-xs font-medium ${
+                isLight ? 'bg-slate-200/60 border-slate-300' : 'bg-white/5 border-white/10'
+              }`}
+            >
+              {(['all', 'downloading', 'seeding', 'paused'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setFilterTab(tab)}
+                  className={`px-3.5 py-1.5 rounded-xl capitalize transition-all ${
+                    filterTab === tab
+                      ? `${colorClasses.bg} text-white shadow-md font-bold`
+                      : isLight
+                      ? 'text-slate-600 hover:text-slate-900'
+                      : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-xs font-mono opacity-60 flex items-center gap-2">
+              <span>{torrents.length} active torrents</span>
+              <span>•</span>
+              <span>{formatBytes(totalDownloaded)} total</span>
+            </div>
           </div>
 
-          {/* Active Torrent Full Metrics & Tech Specs Bar */}
-          {selectedTorrent && (
-            <div className={`border rounded-3xl p-6 flex flex-col gap-4 ${
-              isLight ? 'bg-white border-slate-200 text-slate-800 shadow-sm' : 'bg-white/5 border-white/10 text-white'
-            }`}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/5">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
-                      selectedTorrent.isSeeding ? 'bg-emerald-500/20 text-emerald-400' : 'bg-cyan-500/20 text-cyan-400'
-                    }`}>
-                      {selectedTorrent.isSeeding ? 'Seeding' : selectedTorrent.paused ? 'Paused' : 'Downloading'}
-                    </span>
-                    <h3 className="text-base font-bold truncate max-w-md">{selectedTorrent.name}</h3>
-                  </div>
-                  <p className="text-[10px] font-mono opacity-50 mt-1 truncate max-w-lg">
-                    InfoHash: {selectedTorrent.infoHash}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => togglePauseTorrent(selectedTorrent)}
-                    className={`p-2.5 rounded-xl border transition-colors ${
-                      isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
-                    }`}
-                    title={selectedTorrent.paused ? "Resume Download" : "Pause Download"}
-                  >
-                    {selectedTorrent.paused ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4" />}
-                  </button>
-
-                  <button
-                    onClick={() => copyMagnet(selectedTorrent)}
-                    className={`p-2.5 rounded-xl border transition-colors ${
-                      isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
-                    }`}
-                    title="Copy Magnet Link"
-                  >
-                    {copiedMagnetId === selectedTorrent.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                  </button>
-
-                  <button
-                    onClick={() => removeTorrent(selectedTorrent)}
-                    className="p-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
-                    title="Remove Torrent"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+          {/* Torrent List */}
+          {filteredTorrents.length === 0 ? (
+            <div
+              className={`border rounded-3xl p-12 flex flex-col items-center justify-center text-center gap-4 ${
+                isLight ? 'bg-white border-slate-200 text-slate-500' : 'bg-white/5 border-white/10 text-white/40'
+              }`}
+            >
+              <Radio className="w-12 h-12 stroke-1 opacity-50" />
+              <div>
+                <p className="text-base font-bold mb-1">No torrents in this view</p>
+                <p className="text-xs max-w-sm">
+                  Paste a magnet link or click one of the open source demo buttons above to initiate downloads on the server.
+                </p>
               </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {filteredTorrents.map((t) => {
+                const isSelected = selectedTorrent?.id === t.id;
+                const isExpanded = expandedFiles[t.id] ?? true;
 
-              {/* Metrics Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs font-mono">
-                <div className="p-3 rounded-2xl bg-black/20 border border-white/5">
-                  <p className="text-[10px] opacity-60 uppercase flex items-center gap-1">
-                    <Download className="w-3 h-3" /> Speed
-                  </p>
-                  <p className="font-bold text-sm mt-0.5">{formatBytes(selectedTorrent.downloadSpeed)}/s</p>
-                </div>
-                <div className="p-3 rounded-2xl bg-black/20 border border-white/5">
-                  <p className="text-[10px] opacity-60 uppercase flex items-center gap-1">
-                    <Upload className="w-3 h-3" /> Upload
-                  </p>
-                  <p className="font-bold text-sm mt-0.5">{formatBytes(selectedTorrent.uploadSpeed)}/s</p>
-                </div>
-                <div className="p-3 rounded-2xl bg-black/20 border border-white/5">
-                  <p className="text-[10px] opacity-60 uppercase flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> ETA
-                  </p>
-                  <p className="font-bold text-sm mt-0.5">{formatETA(selectedTorrent.timeRemaining)}</p>
-                </div>
-                <div className="p-3 rounded-2xl bg-black/20 border border-white/5">
-                  <p className="text-[10px] opacity-60 uppercase flex items-center gap-1">
-                    <Percent className="w-3 h-3" /> Share Ratio
-                  </p>
-                  <p className="font-bold text-sm mt-0.5">{selectedTorrent.ratio.toFixed(2)}</p>
-                </div>
-                <div className="p-3 rounded-2xl bg-black/20 border border-white/5">
-                  <p className="text-[10px] opacity-60 uppercase flex items-center gap-1">
-                    <Users className="w-3 h-3" /> Peers
-                  </p>
-                  <p className="font-bold text-sm mt-0.5">{selectedTorrent.numPeers}</p>
-                </div>
-              </div>
-
-              {/* Collapsible Panels: Peers List, Piece Bitfield Visualizer & Trackers */}
-              <div className="flex flex-col gap-3 pt-2">
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => setShowPeers(!showPeers)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono border flex items-center gap-1.5 transition-colors ${
-                      showPeers ? `${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border}` : isLight ? 'bg-slate-100 text-slate-700' : 'bg-white/5 text-white/70 border-white/10'
+                return (
+                  <div
+                    key={t.id}
+                    onClick={() => setSelectedTorrentId(t.id)}
+                    className={`border rounded-3xl p-5 md:p-6 transition-all cursor-pointer flex flex-col gap-4 ${
+                      isSelected
+                        ? `${colorClasses.border} ${isLight ? 'bg-white shadow-md' : 'bg-white/[0.08]'}`
+                        : isLight
+                        ? 'bg-white border-slate-200 hover:border-slate-300'
+                        : 'bg-white/5 border-white/10 hover:border-white/20'
                     }`}
                   >
-                    <Users className="w-3.5 h-3.5" />
-                    <span>Peer Swarm ({selectedTorrent.wires.length})</span>
-                    {showPeers ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </button>
-
-                  <button
-                    onClick={() => setShowPieces(!showPieces)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono border flex items-center gap-1.5 transition-colors ${
-                      showPieces ? `${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border}` : isLight ? 'bg-slate-100 text-slate-700' : 'bg-white/5 text-white/70 border-white/10'
-                    }`}
-                  >
-                    <Activity className="w-3.5 h-3.5" />
-                    <span>Piece Bitfield ({selectedTorrent.pieces.length} blocks)</span>
-                    {showPieces ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </button>
-
-                  <button
-                    onClick={() => setShowTrackers(!showTrackers)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono border flex items-center gap-1.5 transition-colors ${
-                      showTrackers ? `${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border}` : isLight ? 'bg-slate-100 text-slate-700' : 'bg-white/5 text-white/70 border-white/10'
-                    }`}
-                  >
-                    <Globe className="w-3.5 h-3.5" />
-                    <span>Announce Trackers ({selectedTorrent.announce.length})</span>
-                    {showTrackers ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </button>
-
-                  <button
-                    onClick={() => setShowLogs(!showLogs)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono border flex items-center gap-1.5 transition-colors ${
-                      showLogs ? `${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border}` : isLight ? 'bg-slate-100 text-slate-700' : 'bg-white/5 text-white/70 border-white/10'
-                    }`}
-                  >
-                    <Terminal className="w-3.5 h-3.5" />
-                    <span>Live Console Log</span>
-                    {showLogs ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-
-                {/* Peer List View */}
-                {showPeers && (
-                  <div className={`p-4 rounded-2xl border max-h-48 overflow-y-auto text-xs font-mono ${
-                    isLight ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-black/40 border-white/5 text-white/80'
-                  }`}>
-                    {selectedTorrent.wires.length === 0 ? (
-                      <p className="italic opacity-50">No active peer wires connected yet. Looking for WebRTC swarm peers...</p>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        {selectedTorrent.wires.map((wire, idx) => (
-                          <div key={idx} className="flex items-center justify-between pb-1.5 border-b border-white/5">
-                            <div>
-                              <p className="font-bold">{wire.client} ({wire.address})</p>
-                            </div>
-                            <div className="flex items-center gap-3 text-[11px] opacity-70">
-                              <span>↓ {formatBytes(wire.downloadSpeed)}/s</span>
-                              <span>↑ {formatBytes(wire.uploadSpeed)}/s</span>
-                            </div>
-                          </div>
-                        ))}
+                    {/* Header Row: Status, Title, Actions */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          <span
+                            className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                              t.status === 'seeding'
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : t.status === 'paused'
+                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                : t.status === 'metadata'
+                                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 animate-pulse'
+                                : `${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border}`
+                            }`}
+                          >
+                            {t.status}
+                          </span>
+                          <span className="text-xs font-mono opacity-50">
+                            {t.files.length} {t.files.length === 1 ? 'file' : 'files'}
+                          </span>
+                        </div>
+                        <h3 className="text-base font-bold truncate max-w-xl">{t.name}</h3>
                       </div>
-                    )}
-                  </div>
-                )}
 
-                {/* Piece Bitfield Visualizer Grid */}
-                {showPieces && (
-                  <div className={`p-4 rounded-2xl border flex flex-wrap gap-1 max-h-48 overflow-y-auto ${
-                    isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/40 border-white/5'
-                  }`}>
-                    {selectedTorrent.pieces.length === 0 ? (
-                      <p className="text-xs font-mono italic opacity-50">Bitfield metadata pending...</p>
-                    ) : (
-                      selectedTorrent.pieces.map((isDownloaded, pIdx) => (
-                        <div
-                          key={pIdx}
-                          title={`Piece #${pIdx + 1}: ${isDownloaded ? 'Downloaded' : 'Missing'}`}
-                          className={`w-3 h-3 rounded-sm transition-colors ${
-                            isDownloaded ? 'bg-cyan-400' : isLight ? 'bg-slate-300' : 'bg-white/10'
+                      {/* Control Actions */}
+                      <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        {t.paused ? (
+                          <button
+                            onClick={() => handleResume(t.id)}
+                            className={`p-2 rounded-xl border transition-colors ${
+                              isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-800' : 'bg-white/10 hover:bg-white/20 text-white'
+                            }`}
+                            title="Resume Torrent"
+                          >
+                            <Play className="w-4 h-4 fill-current" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handlePause(t.id)}
+                            className={`p-2 rounded-xl border transition-colors ${
+                              isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-800' : 'bg-white/10 hover:bg-white/20 text-white'
+                            }`}
+                            title="Pause Torrent"
+                          >
+                            <Pause className="w-4 h-4" />
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => copyToClipboard(t.magnetURI || t.infoHash, t.id)}
+                          className={`p-2 rounded-xl border transition-colors ${
+                            isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-800' : 'bg-white/10 hover:bg-white/20 text-white'
                           }`}
-                        />
-                      ))
-                    )}
-                  </div>
-                )}
+                          title="Copy Magnet Link"
+                        >
+                          {copiedId === t.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                        </button>
 
-                {/* Announce Trackers List */}
-                {showTrackers && (
-                  <div className={`p-4 rounded-2xl border max-h-40 overflow-y-auto text-xs font-mono ${
-                    isLight ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-black/40 border-white/5 text-white/80'
-                  }`}>
-                    {selectedTorrent.announce.length === 0 ? (
-                      <p className="italic opacity-50">No trackers announced.</p>
-                    ) : (
-                      <div className="flex flex-col gap-1.5">
-                        {selectedTorrent.announce.map((tr, idx) => (
-                          <div key={idx} className="truncate text-[11px] opacity-80">
-                            • {tr}
-                          </div>
-                        ))}
+                        <button
+                          onClick={() => handleImportToLibrary(t.id)}
+                          className={`p-2 rounded-xl border transition-colors ${
+                            isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-800' : 'bg-white/10 hover:bg-white/20 text-white'
+                          }`}
+                          title="Sync with OggleBox Library"
+                        >
+                          <FolderDown className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => setDeleteConfirmId(t.id)}
+                          className="p-2 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors"
+                          title="Delete Torrent"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Delete Confirmation Prompt */}
+                    {deleteConfirmId === t.id && (
+                      <div
+                        className={`p-4 rounded-2xl border text-xs font-mono flex flex-col sm:flex-row items-center justify-between gap-3 ${
+                          isLight ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-rose-950/40 border-rose-500/30 text-rose-200'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span>Delete "{t.name.slice(0, 30)}..."?</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDelete(t.id, false)}
+                            className="px-3 py-1.5 rounded-xl border border-rose-500/40 bg-rose-500/20 hover:bg-rose-500/30 text-xs font-bold"
+                          >
+                            Remove Torrent Only
+                          </button>
+                          <button
+                            onClick={() => handleDelete(t.id, true)}
+                            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow"
+                          >
+                            Delete Files Too
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirmId(null)}
+                            className="px-2 py-1.5 opacity-60 hover:opacity-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     )}
-                  </div>
-                )}
 
-                {/* Status Console Log Output */}
-                {showLogs && (
-                  <div className={`p-4 rounded-2xl border max-h-40 overflow-y-auto font-mono text-[11px] leading-relaxed ${
-                    isLight ? 'bg-slate-900 text-cyan-300 border-slate-800' : 'bg-black/80 text-cyan-400 border-white/10'
-                  }`}>
-                    {logs.length === 0 ? (
-                      <p className="opacity-40 italic">Client ready. Events will appear here...</p>
-                    ) : (
-                      logs.map((log, idx) => (
-                        <div key={idx} className="truncate">{log}</div>
-                      ))
-                    )}
+                    {/* Progress Bar */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-mono">
+                        <span className="font-bold">{t.progress}%</span>
+                        <span className="opacity-60">{formatETA(t.timeRemaining)}</span>
+                      </div>
+                      <div
+                        className={`w-full h-2 rounded-full overflow-hidden ${
+                          isLight ? 'bg-slate-200' : 'bg-black/40'
+                        }`}
+                      >
+                        <div
+                          className={`h-full transition-all duration-300 ${colorClasses.bg}`}
+                          style={{ width: `${Math.min(100, Math.max(0, t.progress))}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Telemetry Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                      <div
+                        className={`p-2.5 rounded-xl border ${
+                          isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/20 border-white/5'
+                        }`}
+                      >
+                        <p className="text-[10px] opacity-60 uppercase flex items-center gap-1">
+                          <Download className="w-3 h-3" /> Inbound
+                        </p>
+                        <p className="font-bold mt-0.5">{formatBytes(t.downloadSpeed)}/s</p>
+                      </div>
+
+                      <div
+                        className={`p-2.5 rounded-xl border ${
+                          isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/20 border-white/5'
+                        }`}
+                      >
+                        <p className="text-[10px] opacity-60 uppercase flex items-center gap-1">
+                          <Upload className="w-3 h-3" /> Outbound
+                        </p>
+                        <p className="font-bold mt-0.5">{formatBytes(t.uploadSpeed)}/s</p>
+                      </div>
+
+                      <div
+                        className={`p-2.5 rounded-xl border ${
+                          isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/20 border-white/5'
+                        }`}
+                      >
+                        <p className="text-[10px] opacity-60 uppercase flex items-center gap-1">
+                          <Users className="w-3 h-3" /> Swarm Peers
+                        </p>
+                        <p className="font-bold mt-0.5">{t.numPeers}</p>
+                      </div>
+
+                      <div
+                        className={`p-2.5 rounded-xl border ${
+                          isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/20 border-white/5'
+                        }`}
+                      >
+                        <p className="text-[10px] opacity-60 uppercase flex items-center gap-1">
+                          <Percent className="w-3 h-3" /> Share Ratio
+                        </p>
+                        <p className="font-bold mt-0.5">{t.ratio}</p>
+                      </div>
+                    </div>
+
+                    {/* Collapsible File Explorer for this Torrent */}
+                    <div className="pt-1 border-t border-white/5 flex flex-col gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedFiles((prev) => ({ ...prev, [t.id]: !isExpanded }));
+                        }}
+                        className={`flex items-center justify-between text-xs font-mono font-bold py-1 ${
+                          colorClasses.text
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <FileVideo className="w-3.5 h-3.5" />
+                          <span>Files inside torrent ({t.files.length})</span>
+                        </span>
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+
+                      {isExpanded && (
+                        <div className="flex flex-col gap-2 pt-1 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                          {t.files.map((file) => (
+                            <div
+                              key={file.index}
+                              className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                                isLight
+                                  ? 'bg-slate-50 border-slate-200 text-slate-800'
+                                  : 'bg-black/30 border-white/5 text-white/90'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 flex items-center gap-2">
+                                <FileVideo
+                                  className={`w-4 h-4 shrink-0 ${file.isVideo ? colorClasses.text : 'opacity-40'}`}
+                                />
+                                <span className="truncate font-medium">{file.name}</span>
+                              </div>
+
+                              <div className="flex items-center gap-3 shrink-0 font-mono text-[11px]">
+                                <span className="opacity-60">{file.lengthFormatted}</span>
+                                {file.progress !== undefined && (
+                                  <span className="opacity-60">{file.progress}%</span>
+                                )}
+
+                                {file.isVideo && onPlayMedia && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      streamInFlagshipPlayer(t, file);
+                                    }}
+                                    className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1 text-white shadow transition-all ${colorClasses.bg}`}
+                                    title="Stream in Flagship Player with Audio Visualizer"
+                                  >
+                                    <Play className="w-3 h-3 fill-current" />
+                                    <span>Stream</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Right Column: Multi-Torrent Dashboard & File Explorer */}
+        {/* Right Column (1 Col): Active Swarm Deep Inspection */}
         <div className="flex flex-col gap-6">
-          {/* Active Torrents Dashboard List */}
-          <div className={`border rounded-3xl p-6 flex flex-col gap-4 ${
-            isLight ? 'bg-white border-slate-200 text-slate-900 shadow-sm' : 'bg-white/5 border-white/10 text-white'
-          }`}>
+          {/* Swarm Details Card */}
+          <div
+            className={`border rounded-3xl p-6 flex flex-col gap-4 ${
+              isLight ? 'bg-white border-slate-200 text-slate-900 shadow-sm' : 'bg-white/5 border-white/10 text-white'
+            }`}
+          >
             <h3 className="text-base font-bold flex items-center justify-between">
-              <span>Active Swarms</span>
-              <span className={`text-xs font-mono px-2 py-0.5 rounded ${isLight ? 'bg-slate-100 text-slate-600' : 'bg-white/10 text-white/60'}`}>
-                {torrents.length} active
-              </span>
+              <span>Swarm Inspection</span>
+              {selectedTorrent && (
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${colorClasses.badge}`}>
+                  Live Stream
+                </span>
+              )}
             </h3>
 
-            {torrents.length === 0 ? (
+            {!selectedTorrent ? (
               <p className={`text-xs italic py-8 text-center ${isLight ? 'text-slate-400' : 'text-white/40'}`}>
-                No active torrents in session. Add a magnet link or click a demo above to start.
+                Select a torrent to inspect its swarm metrics, active wires, and bitfield pieces.
               </p>
             ) : (
-              <div className="flex flex-col gap-2.5 max-h-60 overflow-y-auto custom-scrollbar pr-1">
-                {torrents.map((tItem) => {
-                  const isSelected = selectedTorrent?.id === tItem.id;
+              <div className="flex flex-col gap-4 text-xs font-mono">
+                <div>
+                  <p className="text-[10px] opacity-50 uppercase mb-1">Torrent Name</p>
+                  <p className="font-bold truncate text-sm">{selectedTorrent.name}</p>
+                </div>
 
-                  return (
-                    <div
-                      key={tItem.id}
-                      onClick={() => setSelectedTorrentId(tItem.id)}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2 ${
-                        isSelected
-                          ? `${colorClasses.bgLight} ${colorClasses.border}`
-                          : isLight
-                          ? 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                          : 'bg-white/5 border-white/5 hover:bg-white/10'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <h4 className="text-xs font-bold truncate max-w-[180px]">{tItem.name}</h4>
-                        <span className="text-[10px] font-mono font-bold">{tItem.progress}%</span>
-                      </div>
+                <div>
+                  <p className="text-[10px] opacity-50 uppercase mb-1">InfoHash</p>
+                  <p className="truncate opacity-80 select-all">{selectedTorrent.infoHash}</p>
+                </div>
 
-                      <div className="w-full h-1.5 bg-black/20 rounded-full overflow-hidden">
-                        <div className={`h-full ${colorClasses.bg}`} style={{ width: `${tItem.progress}%` }} />
-                      </div>
+                <div>
+                  <p className="text-[10px] opacity-50 uppercase mb-1">Host Directory</p>
+                  <p className="truncate opacity-80 select-all">{selectedTorrent.savePath}</p>
+                </div>
 
-                      <div className="flex items-center justify-between text-[10px] font-mono opacity-70">
-                        <span>↓ {formatBytes(tItem.downloadSpeed)}/s</span>
-                        <span>{tItem.numPeers} peers</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5">
+                  <div
+                    className={`p-2.5 rounded-xl border ${
+                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/30 border-white/5'
+                    }`}
+                  >
+                    <p className="text-[10px] opacity-50 uppercase">Total Length</p>
+                    <p className="font-bold text-sm mt-0.5">{selectedTorrent.lengthFormatted}</p>
+                  </div>
+                  <div
+                    className={`p-2.5 rounded-xl border ${
+                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/30 border-white/5'
+                    }`}
+                  >
+                    <p className="text-[10px] opacity-50 uppercase">Downloaded</p>
+                    <p className="font-bold text-sm mt-0.5">{formatBytes(selectedTorrent.downloaded)}</p>
+                  </div>
+                </div>
 
-          {/* Selected Torrent Files List */}
-          <div className={`border rounded-3xl p-6 flex flex-col gap-4 ${
-            isLight ? 'bg-white border-slate-200 text-slate-900 shadow-sm' : 'bg-white/5 border-white/10 text-white'
-          }`}>
-            <h3 className="text-base font-bold flex items-center justify-between">
-              <span>File Browser</span>
-              <span className={`text-xs font-mono px-2 py-0.5 rounded ${isLight ? 'bg-slate-100 text-slate-600' : 'bg-white/10 text-white/60'}`}>
-                {selectedTorrent?.files.length || 0} files
-              </span>
-            </h3>
+                {/* Connected Wires / Peer Swarm */}
+                <div className="pt-2 border-t border-white/5 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Connected Peer Wires ({(selectedTorrent.wires || []).length})</span>
+                    </span>
+                  </div>
 
-            {!selectedTorrent || selectedTorrent.files.length === 0 ? (
-              <p className={`text-xs italic py-8 text-center ${isLight ? 'text-slate-400' : 'text-white/40'}`}>
-                Select a torrent to inspect and stream files.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-2 overflow-y-auto max-h-[350px] custom-scrollbar pr-1">
-                {selectedTorrent.files.map((file: any, idx: number) => {
-                  const isVideo = file.name.endsWith('.mp4') || file.name.endsWith('.mkv') ||
-                    file.name.endsWith('.webm') || file.name.endsWith('.avi') || file.name.endsWith('.mov');
-                  const isSelected = selectedFile === file;
-
-                  return (
-                    <div
-                      key={idx}
-                      className={`p-3 rounded-2xl border transition-all text-xs flex items-center justify-between gap-2 ${
-                        isSelected
-                          ? `${colorClasses.bgLight} ${colorClasses.border} ${colorClasses.text} font-bold`
-                          : isVideo
-                          ? isLight
-                            ? 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-800'
-                            : 'bg-white/5 border-white/5 hover:bg-white/10 text-white/90'
-                          : isLight
-                          ? 'bg-slate-100 border-slate-200 opacity-50 text-slate-500'
-                          : 'bg-white/5 border-white/5 opacity-40 text-white/40'
-                      }`}
-                    >
-                      <button
-                        onClick={() => isVideo && setSelectedFile(file)}
-                        disabled={!isVideo}
-                        className="flex items-center gap-2 min-w-0 text-left flex-1"
-                      >
-                        <FileVideo className="w-4 h-4 shrink-0" />
-                        <span className="truncate">{file.name}</span>
-                      </button>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="font-mono text-[10px] opacity-70">
-                          {formatBytes(file.length)}
-                        </span>
-                        <button
-                          onClick={() => downloadFileToDisk(file)}
-                          className={`p-1.5 rounded-lg border transition-colors ${
-                            isLight ? 'bg-white hover:bg-slate-200 text-slate-700' : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
+                  {(selectedTorrent.wires || []).length === 0 ? (
+                    <p className="italic opacity-50 text-[11px] py-2">
+                      Connecting to BitTorrent swarm via DHT & TCP/UDP trackers...
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+                      {selectedTorrent.wires?.map((wire, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-2 rounded-xl border flex items-center justify-between text-[11px] ${
+                            isLight
+                              ? 'bg-slate-50 border-slate-200'
+                              : 'bg-black/30 border-white/5 text-white/80'
                           }`}
-                          title="Save File to Disk"
                         >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                          <span className="font-bold truncate max-w-[140px]">{wire.client}</span>
+                          <span className="opacity-70">↓ {formatBytes(wire.downloadSpeed)}/s</span>
+                        </div>
+                      ))}
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+
+                {/* One-Click Stream Video Files */}
+                <div className="pt-2 border-t border-white/5 flex flex-col gap-2">
+                  <span className="font-bold text-[11px] uppercase tracking-wider opacity-70">
+                    Streamable Media Files
+                  </span>
+                  {selectedTorrent.files.filter((f) => f.isVideo).length === 0 ? (
+                    <p className="italic opacity-50 text-[11px]">No video containers detected.</p>
+                  ) : (
+                    selectedTorrent.files
+                      .filter((f) => f.isVideo)
+                      .map((file) => (
+                        <button
+                          key={file.index}
+                          onClick={() => streamInFlagshipPlayer(selectedTorrent, file)}
+                          className={`w-full p-3 rounded-2xl border font-bold flex items-center justify-between gap-2 transition-all hover:scale-[1.02] ${colorClasses.bgLight} ${colorClasses.border} ${colorClasses.text}`}
+                        >
+                          <div className="flex items-center gap-2 truncate text-left">
+                            <Play className="w-4 h-4 fill-current shrink-0" />
+                            <span className="truncate text-xs">{file.name}</span>
+                          </div>
+                          <span className="text-[10px] opacity-70 shrink-0">{file.lengthFormatted}</span>
+                        </button>
+                      ))
+                  )}
+                </div>
               </div>
             )}
           </div>

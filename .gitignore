@@ -10,6 +10,7 @@ coverage/
 # Media & Caching
 media/
 library-cache.json
+torrents-state.json
 
 # Backups
 .backups/

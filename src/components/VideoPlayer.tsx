@@ -657,6 +657,15 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           key={useTranscode ? `transcode-${transcodeStartTime}` : 'direct'}
           ref={videoRef}
           src={(() => {
+            if (item.url && item.url.startsWith('/api/torrents/')) {
+              const baseStreamUrl = item.url.split('?')[0];
+              if (useTranscode) {
+                const profile = settings?.transcodeProfile || 'netflix';
+                const transcodeUrl = baseStreamUrl.replace('/stream/', '/transcode/');
+                return `${transcodeUrl}?start=${transcodeStartTime}&profile=${profile}`;
+              }
+              return baseStreamUrl;
+            }
             let cleanPath = item.path || item.url || '';
             cleanPath = cleanPath.replace(/^\/api\/stream\//, '').replace(/^\/api\/transcode\//, '').replace(/^transcode\//, '').replace(/^\/+/, '');
             const encodedPath = cleanPath.split('/').map(encodeURIComponent).join('/');

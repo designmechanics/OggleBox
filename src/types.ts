@@ -59,3 +59,41 @@ export type AppSettings = {
   transcodeProfile: TranscodeProfile;
 };
 
+export type TorrentFileItem = {
+  index: number;
+  name: string;
+  path: string;
+  length: number;
+  lengthFormatted: string;
+  downloaded: number;
+  progress: number;
+  isVideo: boolean;
+  streamUrl: string;
+};
+
+export type TorrentItem = {
+  id: string;
+  name: string;
+  infoHash: string;
+  magnetURI: string;
+  progress: number;
+  downloadSpeed: number;
+  uploadSpeed: number;
+  numPeers: number;
+  downloaded: number;
+  length: number;
+  lengthFormatted: string;
+  timeRemaining: number;
+  ratio: number;
+  paused: boolean;
+  isSeeding: boolean;
+  status: 'downloading' | 'seeding' | 'paused' | 'metadata' | 'error';
+  savePath: string;
+  files: TorrentFileItem[];
+  wires?: { address: string; client: string; downloadSpeed: number; uploadSpeed: number }[];
+  pieceCount?: number;
+  downloadedPieces?: number;
+  addedAt?: string;
+  category?: string;
+};
+

@@ -8,6 +8,18 @@ import { createServer as createViteServer } from "vite";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeInstaller from "@ffprobe-installer/ffprobe";
+import {
+  initTorrentManager,
+  getAllTorrents,
+  getTorrentById,
+  addTorrent,
+  pauseTorrent,
+  resumeTorrent,
+  removeTorrent,
+  streamTorrentFile,
+  getTorrentFileResolvedPath,
+  getTorrentFile
+} from "./torrentManager";
 
 ffmpeg.setFfmpegPath(ffmpegStatic as string);
 ffmpeg.setFfprobePath(ffprobeInstaller.path);
@@ -177,6 +189,20 @@ function resolveVideoFilePath(rawInputPath: string): { filePath: string | null; 
     .replace(/^api\/transcode\//, '')
     .replace(/^transcode\//, '')
     .replace(/^\/+/, '');
+
+  // Check if this points to a live torrent stream or file
+  const torrentMatch = decoded.match(/torrents\/([^/]+)\/(?:stream|transcode)\/(\d+)/i);
+  if (torrentMatch) {
+    const tId = torrentMatch[1];
+    const fIdx = parseInt(torrentMatch[2], 10);
+    const resolvedTorrentPath = getTorrentFileResolvedPath(tId, fIdx);
+    if (resolvedTorrentPath) {
+      searched.push(resolvedTorrentPath);
+      if (fs.existsSync(resolvedTorrentPath) && fs.statSync(resolvedTorrentPath).isFile()) {
+        return { filePath: resolvedTorrentPath, searched };
+      }
+    }
+  }
 
   let try1 = path.resolve(process.cwd(), clean);
   searched.push(try1);
@@ -426,6 +452,21 @@ function loadLibraryCache(): any[] | null {
 async function startServer() {
   logStep("Boot", "Step 3/5", "Preloading RAM cache from library-cache.json...");
   const preloaded = loadLibraryCache();
+
+  logStep("Boot", "TorrentEngine", "Starting background BitTorrent engine...");
+  initTorrentManager(MEDIA_DIR, async (completedFiles) => {
+    logStep("TorrentEngine", "AutoIndex", `Auto-indexing ${completedFiles.length} completed torrent video(s)...`);
+    try {
+      const mediaFiles = await scanDirectoryForVideos(MEDIA_DIR);
+      const publicFiles = await scanDirectoryForVideos(PUBLIC_DIR);
+      const files = Array.from(new Set([...mediaFiles, ...publicFiles]));
+      const videos = await buildLibraryFromFiles(files);
+      saveLibraryCache(videos);
+      logStep("TorrentEngine", "AutoIndexOK", `Library updated with ${videos.length} items.`);
+    } catch (e: any) {
+      logStep("TorrentEngine", "AutoIndexWarn", `Failed to auto-index: ${e.message}`);
+    }
+  });
 
   const app = express();
   const httpServer = http.createServer(app);
@@ -918,6 +959,169 @@ async function startServer() {
     const file = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 * 5 }); // Fast 5MB chunks for downloading
     file.pipe(res);
   });
+
+  // ==========================================
+  // TORRENT ENGINE REST API ROUTES
+  // ==========================================
+
+  app.get("/api/torrents", (req, res) => {
+    try {
+      const list = getAllTorrents();
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to list torrents" });
+    }
+  });
+
+  app.get("/api/torrents/:id", (req, res) => {
+    const t = getTorrentById(req.params.id);
+    if (!t) return res.status(404).json({ error: "Torrent not found" });
+    res.json(t);
+  });
+
+  app.post("/api/torrents/add", async (req, res) => {
+    try {
+      const { magnetURI, category = "Torrents" } = req.body;
+      if (!magnetURI) {
+        return res.status(400).json({ error: "magnetURI is required" });
+      }
+      logStep("TorrentAPI", "Add", `Adding torrent magnet or hash: ${magnetURI.slice(0, 60)}...`);
+      const torrent = await addTorrent(magnetURI, category);
+      res.json({ status: "success", torrent });
+    } catch (err: any) {
+      logStep("TorrentAPI", "AddError", err.message || err);
+      res.status(500).json({ error: err.message || "Failed to add torrent" });
+    }
+  });
+
+  app.post("/api/torrents/upload", express.raw({ type: "application/x-bittorrent", limit: "15mb" }), async (req, res) => {
+    try {
+      if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: "No torrent binary received" });
+      }
+      logStep("TorrentAPI", "Upload", `Received .torrent binary (${formatBytes(req.body.length)})`);
+      const torrent = await addTorrent(req.body, "Torrents");
+      res.json({ status: "success", torrent });
+    } catch (err: any) {
+      logStep("TorrentAPI", "UploadError", err.message || err);
+      res.status(500).json({ error: err.message || "Failed to add .torrent file" });
+    }
+  });
+
+  app.post("/api/torrents/:id/pause", (req, res) => {
+    const ok = pauseTorrent(req.params.id);
+    res.json({ status: ok ? "success" : "not_found" });
+  });
+
+  app.post("/api/torrents/:id/resume", (req, res) => {
+    const ok = resumeTorrent(req.params.id);
+    res.json({ status: ok ? "success" : "not_found" });
+  });
+
+  app.delete("/api/torrents/:id", async (req, res) => {
+    try {
+      const deleteFiles = req.query.deleteFiles === "true";
+      const ok = await removeTorrent(req.params.id, deleteFiles);
+      res.json({ status: ok ? "success" : "not_found" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/torrents/:id/stream/:fileIndex", (req, res) => {
+    const fileIndex = parseInt(req.params.fileIndex, 10);
+    if (isNaN(fileIndex)) return res.status(400).send("Invalid file index");
+    streamTorrentFile(req.params.id, fileIndex, req, res);
+  });
+
+  app.get("/api/torrents/:id/transcode/:fileIndex", (req, res) => {
+    const fileIndex = parseInt(req.params.fileIndex, 10);
+    if (isNaN(fileIndex)) return res.status(400).send("Invalid file index");
+
+    const filePath = getTorrentFileResolvedPath(req.params.id, fileIndex);
+    const torrentFile = getTorrentFile(req.params.id, fileIndex);
+
+    if (!torrentFile) {
+      return res.status(404).send("Torrent file not found");
+    }
+
+    if (typeof torrentFile.select === "function") {
+      torrentFile.select();
+    }
+
+    const startTime = req.query.start ? parseFloat(req.query.start as string) : 0;
+    const targetCodec = req.query.codec === "libx265" ? "libx265" : "libx264";
+    const profile = (req.query.profile as string) || "netflix";
+
+    res.contentType("video/mp4");
+
+    const ffmpegOptions = [
+      "-pix_fmt yuv420p",
+      "-ac 2",
+      "-movflags frag_keyframe+empty_moov+default_base_moof",
+      "-threads 0"
+    ];
+
+    if (targetCodec === "libx265") {
+      ffmpegOptions.push("-tag:v hvc1");
+    }
+
+    switch (profile) {
+      case "netflix":
+        ffmpegOptions.push("-preset fast", "-crf 18", "-tune film", "-g 60", "-bufsize 10M", "-maxrate 15M", "-profile:v high", "-b:a 192k");
+        break;
+      case "smooth":
+        ffmpegOptions.push("-preset veryfast", "-crf 20", "-tune zerolatency", "-g 30", "-bufsize 5M", "-maxrate 8M", "-b:a 192k");
+        break;
+      case "anime":
+        ffmpegOptions.push("-preset fast", "-crf 20", "-tune animation", "-g 120", "-b:a 192k");
+        break;
+      case "low":
+        ffmpegOptions.push("-preset superfast", "-crf 28", "-g 60", "-maxrate 3M", "-bufsize 3M", "-b:a 128k");
+        break;
+      case "standard":
+      default:
+        ffmpegOptions.push("-preset veryfast", "-crf 23", "-g 60", "-b:a 192k");
+        break;
+    }
+
+    let inputSource: any = (filePath && fs.existsSync(filePath) && fs.statSync(filePath).size > 0)
+      ? filePath
+      : torrentFile.createReadStream();
+
+    const command = ffmpeg(inputSource)
+      .seekInput(startTime)
+      .videoCodec(targetCodec)
+      .audioCodec("aac")
+      .format("mp4")
+      .outputOptions(ffmpegOptions)
+      .on("error", (err) => {
+        if (!err.message.includes("Output stream closed")) {
+          logStep("TorrentTranscode", "FFmpegError", err.message);
+        }
+      });
+
+    command.pipe(res, { end: true });
+
+    req.on("close", () => {
+      try { command.kill("SIGKILL"); } catch {}
+      try { if (typeof inputSource.destroy === "function") inputSource.destroy(); } catch {}
+    });
+  });
+
+  app.post("/api/torrents/:id/import", async (req, res) => {
+    try {
+      const mediaFiles = await scanDirectoryForVideos(MEDIA_DIR);
+      const publicFiles = await scanDirectoryForVideos(PUBLIC_DIR);
+      const files = Array.from(new Set([...mediaFiles, ...publicFiles]));
+      const videos = await buildLibraryFromFiles(files);
+      saveLibraryCache(videos);
+      res.json({ status: "success", count: videos.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   logStep("Boot", "Step 5/5", "Mounting Vite dev server middleware...");
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

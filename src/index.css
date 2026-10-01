@@ -519,3 +519,27 @@ button {
 
 .duration-800 { transition-duration: 800ms; }
 .duration-1000 { transition-duration: 1000ms; }
+
+/* Modal and UI Fade-in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-fadeIn { animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+.select-all { user-select: all; }
+.capitalize { text-transform: capitalize; }
+.bg-white\/\[0\.08\] { background-color: rgba(255, 255, 255, 0.08); }
+.border-emerald-500\/30 { border-color: rgba(16, 185, 129, 0.3); }
+.bg-emerald-500\/20 { background-color: rgba(16, 185, 129, 0.2); }
+.border-amber-500\/30 { border-color: rgba(245, 158, 11, 0.3); }
+.bg-amber-500\/20 { background-color: rgba(245, 158, 11, 0.2); }
+.border-indigo-500\/30 { border-color: rgba(99, 102, 241, 0.3); }
+.bg-indigo-500\/20 { background-color: rgba(99, 102, 241, 0.2); }
+.text-indigo-300 { color: #a5b4fc; }
+.bg-rose-600 { background-color: #e11d48; }
+.hover\:bg-rose-700:hover { background-color: #be123c; }
+.bg-rose-50 { background-color: #fff1f2; }
+.border-rose-200 { border-color: #fecdd3; }
+.text-rose-900 { color: #881337; }
+.bg-rose-950\/40 { background-color: rgba(76, 5, 25, 0.4); }

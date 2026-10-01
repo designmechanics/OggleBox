@@ -494,7 +494,11 @@ export default function App() {
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
             {activeTab === 'webtorrent' ? (
-              <WebTorrentView theme={settings.theme} primaryColor={settings.primaryColor} />
+              <WebTorrentView 
+                theme={settings.theme} 
+                primaryColor={settings.primaryColor}
+                onPlayMedia={(mediaItem) => setActiveMedia(mediaItem)}
+              />
             ) : (
               <>
                 {/* Category Sidebar */}

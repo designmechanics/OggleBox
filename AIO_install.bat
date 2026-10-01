@@ -71,4 +71,7 @@ echo =======================================================
 echo A convenient 'start_ogglebox.bat' file has been created.
 echo Double-click 'start_ogglebox.bat' to run your server anytime.
 echo.
+echo Once started, open http://^<LAN_IP^>:3000 from any device on your network.
+echo No SSL certificates or trust setup required!
+echo.
 pause

@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { Play, Info, Settings, Loader2, Search, X, RefreshCw, FileText, Calendar, HardDrive, LayoutGrid, List, Heart, Clock, SortAsc, SortDesc, Zap, Volume2, VolumeX } from 'lucide-react';
+import { Play, Info, Settings, Loader2, Search, X, RefreshCw, FileText, Calendar, HardDrive, LayoutGrid, List, Heart, Clock, SortAsc, SortDesc, Zap, Volume2, VolumeX, Radio } from 'lucide-react';
 import type { MediaItem, AppSettings, PrimaryColorKey, ThemeMode } from './types';
 import VideoPlayer from './components/VideoPlayer';
 import CategorySidebar from './components/CategorySidebar';
 import SettingsModal from './components/SettingsModal';
 import DeepMetaModal from './components/DeepMetaModal';
+import WebTorrentView from './components/WebTorrentView';
 
 gsap.registerPlugin(useGSAP);
 
@@ -18,6 +19,7 @@ export default function App() {
   const [activeMedia, setActiveMedia] = useState<MediaItem | null>(null);
   const [selectedDetailMedia, setSelectedDetailMedia] = useState<MediaItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<'library' | 'webtorrent'>('library');
   const [regenerating, setRegenerating] = useState(false);
   
   const [scanStatus, setScanStatus] = useState<{ current: number; total: number; currentFile: string; added: number; errors: number } | null>(null);
@@ -358,14 +360,43 @@ export default function App() {
           <nav className={`shrink-0 border-b px-6 py-3.5 flex flex-col md:flex-row items-center justify-between gap-4 z-20 transition-colors ${
             isLight ? 'bg-white/80 backdrop-blur-xl border-slate-200 shadow-sm' : 'bg-black/40 backdrop-blur-xl border-white/10'
           }`}>
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveCategory("All")}>
-              <div className={`w-8.5 h-8.5 rounded-xl flex items-center justify-center shadow-lg bg-gradient-to-br ${colorClasses.gradient}`}>
-                <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setActiveTab('library'); setActiveCategory("All"); }}>
+                <div className={`w-8.5 h-8.5 rounded-xl flex items-center justify-center shadow-lg bg-gradient-to-br ${colorClasses.gradient}`}>
+                  <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                </div>
+                <h1 className="text-xl font-black italic tracking-tight uppercase flex items-center gap-1.5">
+                  <span className={colorClasses.text}>{firstWord}</span>
+                  {remainingWords && <span className={isLight ? "text-slate-900" : "text-white"}>{remainingWords}</span>}
+                </h1>
               </div>
-              <h1 className="text-xl font-black italic tracking-tight uppercase flex items-center gap-1.5">
-                <span className={colorClasses.text}>{firstWord}</span>
-                {remainingWords && <span className={isLight ? "text-slate-900" : "text-white"}>{remainingWords}</span>}
-              </h1>
+
+              {/* View Switcher Tabs (Library vs WebTorrent) */}
+              <div className={`flex items-center p-1 rounded-full border text-xs font-bold ${
+                isLight ? 'bg-slate-200/60 border-slate-300' : 'bg-white/5 border-white/10'
+              }`}>
+                <button
+                  onClick={() => setActiveTab('library')}
+                  className={`px-3 py-1 rounded-full transition-all ${
+                    activeTab === 'library'
+                      ? `${colorClasses.bg} text-white shadow-md`
+                      : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  Library
+                </button>
+                <button
+                  onClick={() => setActiveTab('webtorrent')}
+                  className={`px-3 py-1 rounded-full transition-all flex items-center gap-1.5 ${
+                    activeTab === 'webtorrent'
+                      ? `${colorClasses.bg} text-white shadow-md`
+                      : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  <Radio className="w-3.5 h-3.5" />
+                  WebTorrent
+                </button>
+              </div>
             </div>
             
             <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto justify-between md:justify-end">
@@ -462,17 +493,21 @@ export default function App() {
 
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
-            {/* Category Sidebar */}
-            <CategorySidebar 
-              library={library} 
-              activeCategory={activeCategory} 
-              onSelectCategory={setActiveCategory} 
-              theme={settings.theme}
-              primaryColor={settings.primaryColor}
-            />
+            {activeTab === 'webtorrent' ? (
+              <WebTorrentView theme={settings.theme} primaryColor={settings.primaryColor} />
+            ) : (
+              <>
+                {/* Category Sidebar */}
+                <CategorySidebar
+                  library={library}
+                  activeCategory={activeCategory}
+                  onSelectCategory={setActiveCategory}
+                  theme={settings.theme}
+                  primaryColor={settings.primaryColor}
+                />
 
-            {/* Video Listing Container */}
-            <main className="flex-1 h-full overflow-y-auto p-6 md:p-8 custom-scrollbar">
+                {/* Video Listing Container */}
+                <main className="flex-1 h-full overflow-y-auto p-6 md:p-8 custom-scrollbar">
               {loading ? (
                 <div className="h-64 flex items-center justify-center">
                   <Loader2 className={`w-8 h-8 animate-spin ${colorClasses.text}`} />
@@ -662,7 +697,9 @@ export default function App() {
                   })}
                 </div>
               )}
-            </main>
+                </main>
+              </>
+            )}
           </div>
 
           {/* Resume Playback Modal */}

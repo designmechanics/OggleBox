@@ -12,6 +12,14 @@ media/
 library-cache.json
 torrents-state.json
 
+# Torrents & Downloads
+*.torrent
+*.iso
+*.part
+*.crdownload
+torrents/
+downloads/
+
 # Backups
 .backups/
 *.bak

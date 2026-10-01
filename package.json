@@ -1,7 +1,8 @@
 {
-  "name": "react-example",
+  "name": "ogglebox",
+  "description": "A fluid, lightweight local media server with built-in BitTorrent engine and real-time transcoding.",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

@@ -2,13 +2,14 @@
 
 # OggleBox Server
 
-A fluid, lightweight local media server built with Express and React.
+A fluid, lightweight local media server with integrated BitTorrent daemon and real-time transcoding, built with Express and React.
 
 ## Features
-- **Video Streaming**: HTTP Range Requests for efficient video seeking.
-- **Zero Config**: Scans the media directory automatically.
-- **Transcoding & Probe**: Uses `ffmpeg` and `ffprobe` to gather deep meta and transcode video.
-- **Sub-category Support**: Recursively scans `media/` and groups videos.
+- **Video Streaming**: HTTP Range Requests for efficient video seeking and instant playback.
+- **Integrated BitTorrent Daemon**: Stream while downloading, add torrents via Magnet link, hash, or `.torrent` file drag-and-drop, and inspect real-time peer telemetry and transfer speeds.
+- **Smart Library Organization**: Automatic post-download sorting and classification into your local library (videos, audio, or binary archives).
+- **Zero Config**: Scans the media directory automatically with recursive subcategory grouping.
+- **Transcoding & Deep Probe**: Uses `ffmpeg` and `ffprobe` to inspect media properties and transcode incompatible codecs on the fly.
 - **Progress Tracking**: Remembers playback progress in local storage.
 - **Seamless LAN HTTP Access**: Connect directly from any device on your home network via `http://<host-ip>:3000` with zero SSL or certificate configuration.
 

@@ -605,7 +605,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   return (
     <div 
       ref={containerRef} 
-      className="fixed inset-0 z-50 bg-black flex flex-col"
+      className="fixed inset-0 z-player bg-black flex flex-col pointer-events-auto"
+      style={{ zIndex: 99990 }}
       onMouseMove={handleMouseMove}
       onClick={handleMouseMove}
     >

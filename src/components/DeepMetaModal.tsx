@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Cpu, Film, Volume2, HardDrive, Tag, Loader2, Play, Calendar, Clock, Layers, ShieldCheck } from 'lucide-react';
 import type { MediaItem, DeepMeta, ThemeMode } from '../types';
 
@@ -84,8 +85,11 @@ export default function DeepMetaModal({
     return `${(bytes / 1024).toFixed(0)} KB`;
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+  return createPortal(
+    <div 
+      className="fixed inset-0 z-modal z-[99999] pointer-events-auto flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+      style={{ zIndex: 99999 }}
+    >
       <div className={`w-full max-w-2xl rounded-3xl border shadow-2xl overflow-hidden transition-all duration-300 flex flex-col max-h-[85vh] ${
         isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-white/10 text-white'
       }`}>
@@ -292,6 +296,7 @@ export default function DeepMetaModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

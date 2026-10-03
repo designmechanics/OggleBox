@@ -90,9 +90,17 @@ html, body, #root {
 .z-20 { z-index: 20; }
 .z-30 { z-index: 30; }
 .z-50 { z-index: 50; }
+.z-100 { z-index: 100; }
+.z-200 { z-index: 200; }
+.z-500 { z-index: 500; }
+.z-1000 { z-index: 1000; }
+.z-player { z-index: 99990; }
+.z-modal { z-index: 99999; }
+.z-\[99999\] { z-index: 99999; }
 
 .cursor-pointer { cursor: pointer; }
 .pointer-events-none { pointer-events: none; }
+.pointer-events-auto { pointer-events: auto; }
 .select-none { user-select: none; }
 
 /* Spacing */

@@ -47,6 +47,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const lastStorageSaveRef = useRef<number>(0);
+  const hasResumedRef = useRef<boolean>(false);
   const reqRef = useRef<number>(0);
 
   const initAudio = () => {
@@ -147,6 +148,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
 
   useEffect(() => {
     let cancelled = false;
+    hasResumedRef.current = false;
+    lastStorageSaveRef.current = Date.now();
     setCapabilityChecked(false);
     setTranscodeStartTime(0);
     if (item.mediaType === 'audio') {
@@ -190,9 +193,11 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           const resumeTime = getSavedResumeTime(item.id, meta?.duration || 0);
           if (resumeTime !== null) setTranscodeStartTime(resumeTime);
           showToast(`${reason}: Auto-Transcoding to H.264/AAC`);
-        } else if (videoCodec === 'hevc' || videoCodec === 'h265') {
+        } else {
           setUseTranscode(false);
-          showToast('Native HEVC Supported: Direct Play');
+          if (videoCodec === 'hevc' || videoCodec === 'h265') {
+            showToast('Native HEVC Supported: Direct Play');
+          }
         }
       })
       .catch(() => {
@@ -331,11 +336,37 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   // an ffmpeg stream can't be seeked after the fact and must start at the right offset).
   const getSavedResumeTime = (mediaId: string, totalDuration: number): number | null => {
     const savedTime = localStorage.getItem(`motionstream_progress_${mediaId}`);
-    if (!savedTime) return null;
-    const time = parseFloat(savedTime);
+    const savedPercent = localStorage.getItem(`motionstream_progress_percent_${mediaId}`);
+
+    let time = savedTime ? parseFloat(savedTime) : NaN;
+    const percent = savedPercent ? parseFloat(savedPercent) : NaN;
+
+    // Fallback: If seconds are missing or zero, but a valid percent exists and duration is known
+    if ((isNaN(time) || time <= 0) && !isNaN(percent) && percent > 0 && totalDuration > 0) {
+      time = (percent / 100) * totalDuration;
+    }
+
     if (isNaN(time) || time <= 0) return null;
-    if (totalDuration > 0 && time >= totalDuration - 5) return null;
+
+    // Only discard if the video was essentially completed (>95% or last 5s for long media)
+    if (totalDuration > 0) {
+      const endThreshold = totalDuration > 60
+        ? Math.max(totalDuration - 5, totalDuration * 0.95)
+        : totalDuration * 0.95;
+      if (time >= endThreshold) return null;
+    }
+
     return time;
+  };
+
+  const applyDirectResume = (dur: number) => {
+    if (useTranscode || hasResumedRef.current || !videoRef.current) return;
+    const resumeTime = getSavedResumeTime(item.id, dur);
+    if (resumeTime !== null && resumeTime > 0) {
+      hasResumedRef.current = true;
+      videoRef.current.currentTime = resumeTime;
+      updatePlaybackDisplay(resumeTime, dur);
+    }
   };
 
   useGSAP(() => {
@@ -365,7 +396,35 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     }
   }, { dependencies: [isPlaying, isLoaded], scope: containerRef });
 
+  const saveCurrentProgress = (force: boolean = false) => {
+    if (!videoRef.current) return;
+    const vid = videoRef.current;
+    if (vid.seeking && !force) return;
+
+    let time = vid.currentTime;
+    let currentDuration = vid.duration;
+
+    if (useTranscode) {
+      time += transcodeStartTime;
+      if (currentDuration === Infinity || isNaN(currentDuration)) {
+        currentDuration = duration;
+      }
+    }
+
+    const activeDuration = currentDuration > 0 && currentDuration !== Infinity ? currentDuration : duration;
+    if (time <= 0 || activeDuration <= 0) return;
+
+    const now = Date.now();
+    if (force || now - lastStorageSaveRef.current > 1000) {
+      lastStorageSaveRef.current = now;
+      const p = (time / activeDuration) * 100;
+      localStorage.setItem(`motionstream_progress_${item.id}`, time.toString());
+      localStorage.setItem(`motionstream_progress_percent_${item.id}`, p.toString());
+    }
+  };
+
   const handleClose = () => {
+    saveCurrentProgress(true);
     if (videoRef.current) {
       videoRef.current.pause();
     }
@@ -378,6 +437,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const togglePlay = () => {
     if (videoRef.current) {
       if (isPlaying) {
+        saveCurrentProgress(true);
         videoRef.current.pause();
       } else {
         videoRef.current.play();
@@ -487,6 +547,9 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
+      // Don't overwrite progress during a pending seek
+      if (videoRef.current.seeking) return;
+
       let time = videoRef.current.currentTime;
       let currentDuration = videoRef.current.duration;
 
@@ -518,27 +581,38 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         }
       }
       
-      // Save progress to local storage (throttled to once every 3 seconds to prevent I/O stutter)
-      const now = Date.now();
-      if (time > 0 && activeDuration > 0 && now - lastStorageSaveRef.current > 3000) {
-        lastStorageSaveRef.current = now;
-        localStorage.setItem(`motionstream_progress_${item.id}`, time.toString());
-        localStorage.setItem(`motionstream_progress_percent_${item.id}`, p.toString());
+      // Save progress to local storage (throttled to 1s)
+      saveCurrentProgress(false);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    setIsLoaded(true);
+    if (videoRef.current) {
+      const dur = videoRef.current.duration;
+      if (dur > 0 && dur !== Infinity) {
+        setDuration(dur);
       }
+      applyDirectResume(dur);
+    }
+  };
+
+  const handleCanPlay = () => {
+    setIsLoaded(true);
+    if (videoRef.current) {
+      const dur = videoRef.current.duration;
+      applyDirectResume(dur);
     }
   };
 
   const onLoadedData = () => {
     setIsLoaded(true);
     if (videoRef.current) {
-      if (!useTranscode) {
-        // Transcode mode's resume point is handled earlier via transcodeStartTime, since an
-        // ffmpeg stream has to start at the right offset — it can't be seeked after the load.
-        const resumeTime = getSavedResumeTime(item.id, videoRef.current.duration);
-        if (resumeTime !== null) {
-          videoRef.current.currentTime = resumeTime;
-        }
+      const dur = videoRef.current.duration;
+      if (dur > 0 && dur !== Infinity) {
+        setDuration(dur);
       }
+      applyDirectResume(dur);
       
       videoRef.current.play().then(() => { setIsPlaying(true); }).catch(() => setIsPlaying(false));
     }
@@ -547,7 +621,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (videoRef.current) {
       const percentage = parseFloat(e.target.value);
-      const time = (percentage / 100) * (duration || videoRef.current.duration);
+      const activeDuration = duration || videoRef.current.duration;
+      const time = (percentage / 100) * activeDuration;
       
       if (useTranscode) {
         // For transcoded streams, we must trigger a reload with new start time
@@ -555,6 +630,12 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         setIsLoaded(false);
       } else {
         videoRef.current.currentTime = time;
+      }
+      updatePlaybackDisplay(time, activeDuration);
+      if (time > 0 && activeDuration > 0) {
+        lastStorageSaveRef.current = Date.now();
+        localStorage.setItem(`motionstream_progress_${item.id}`, time.toString());
+        localStorage.setItem(`motionstream_progress_percent_${item.id}`, percentage.toString());
       }
     }
   };
@@ -597,10 +678,16 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   };
 
   useEffect(() => {
+    const handleBeforeUnload = () => {
+      saveCurrentProgress(true);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
+      saveCurrentProgress(true);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     };
-  }, []);
+  }, [item.id, useTranscode, transcodeStartTime, duration]);
 
   return (
     <div 
@@ -684,8 +771,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           onClick={togglePlay}
           onTimeUpdate={handleTimeUpdate}
           onLoadedData={onLoadedData}
-          onCanPlay={() => setIsLoaded(true)}
-          onLoadedMetadata={() => setIsLoaded(true)}
+          onCanPlay={handleCanPlay}
+          onLoadedMetadata={handleLoadedMetadata}
           onError={(e) => {
             const mediaErr = (e.currentTarget as HTMLVideoElement)?.error;
             console.error("Video element playback error:", mediaErr ? `${mediaErr.code}: ${mediaErr.message}` : "Playback error");

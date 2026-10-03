@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ABSOLUTE MANDATE: SURGICAL EDITS ONLY — ZERO SCOPE CREEP & NO ADDITIVE MUTATIONS
+
+**CRITICAL DEVELOPER DIRECTIVE — MUST BE FOLLOWED WITHOUT EXCEPTION:**
+1. **NO ALTERING CODE UNRELATED TO THE PROMPTED TASK**:
+   - Touch ONLY the exact lines and files directly required to fulfill the user's specific instruction.
+   - Do NOT touch, re-style, re-theme, or "improve" adjacent components, wrapper bars, navigation menus, headers, sidebars, or overlays.
+   - NEVER "anticipate" or "proactively fix" side effects in neighboring files. If a card needs spacing, change only the card/stage spacing; NEVER alter the menu bar behind/above it.
+2. **SURGICAL STRIKES ONLY — NO DIVERSION, NO DEVIATION**:
+   - Implement the minimal, cleanest change necessary.
+   - Do NOT add unsolicited visual enhancements, extra utility classes, extra borders, shadows, or backdrop blurs.
+   - When fixing an issue (fixing B), NEVER introduce new changes to C.
+   - When the user asks for A, deliver ONLY A. Never A+B.
+3. **CONTEXT AWARENESS & FILE DISCIPLINE**:
+   - Read and respect `CLAUDE.md`, `GEMINI.md`, `MODELS.md`, and any related task documentation before proposing or making changes.
+   - Preserve existing visual aesthetics, themes, backgrounds, and styling constants unless an explicit aesthetic change is commanded by the user.
+
 ## Project
 
 OggleBox Server — a local media server: an Express backend (media scanning, HTTP-range video streaming, on-the-fly FFmpeg transcoding, thumbnail generation) paired with a single-page React 19 frontend, served together from one process/port (3000).
@@ -41,3 +57,10 @@ Docker: `docker-compose up -d` builds via `Dockerfile` (node:20-slim + apt ffmpe
 ## Stray files
 
 `server - Copy.ts`, `server.ts.old`, and `src/components/VideoPlayer - Copy.tsx` are backup snapshots left in the working tree, not part of the build — don't edit them expecting effect, and don't treat them as a second source of truth for current behavior.
+
+## Theming & Modal Consistency Rules
+
+1. **Static CSS3 (No Tailwind JIT)**: `src/index.css` is handwritten static CSS. Do NOT use arbitrary uncompiled classes like `dark:bg-*` or `z-[99999]`. Always use explicit boolean checks (`isLight ? ... : ...`) and defined CSS classes.
+2. **WebTorrent Suite Theming**: When `theme === 'light'`, the root container has `.wt-container.light` which activates light theme rules in `src/index.css`. All inline styles in `WebTorrentView.tsx` must support both light and dark modes.
+3. **Modal Stacking & Elevation Mandate**: Because 3D cards in GSAP modes have 3D transforms (`transformStyle: 'preserve-3d'`, perspective, and dynamic z-indexes up to 300), all modals (`SettingsModal`, `ResumeModal`, `DeepMetaModal`, `selectedDetailMedia`) and `<VideoPlayer>` MUST render into `document.body` via `createPortal` and use explicit inline `style={{ zIndex: 99999 }}` (or `99990` for player) with `pointer-events-auto`.
+

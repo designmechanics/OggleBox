@@ -126,7 +126,7 @@ export const StageWatermark: React.FC<StageWatermarkProps> = React.memo(({
         <div
           ref={exitRef}
           key={`exit-${state.animKey}`}
-          className="absolute font-bold text-[60vh] leading-none select-none"
+          className="absolute font-title font-black text-[60vh] leading-none select-none"
           style={{
             color: isLight ? 'rgba(15, 23, 42, 0.04)' : 'rgba(255, 255, 255, 0.035)',
             transformStyle: 'preserve-3d'
@@ -139,7 +139,7 @@ export const StageWatermark: React.FC<StageWatermarkProps> = React.memo(({
         <div
           ref={currentRef}
           key={`current-${state.animKey}`}
-          className="absolute font-bold text-[60vh] leading-none select-none"
+          className="absolute font-title font-black text-[60vh] leading-none select-none"
           style={{
             color: isLight ? 'rgba(15, 23, 42, 0.04)' : 'rgba(255, 255, 255, 0.035)',
             transformStyle: 'preserve-3d'

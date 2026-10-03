@@ -132,8 +132,8 @@ export const DisplayViewBar: React.FC<DisplayViewBarProps> = ({
                   onClick={() => onDensityChange(d)}
                   className={`w-6 h-6 rounded-md text-[11px] font-mono font-bold transition-all ${
                     density === d
-                      ? 'bg-white text-black shadow-sm dark:bg-white/20 dark:text-white'
-                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                      ? (isLight ? 'bg-slate-200 text-slate-900 shadow-sm' : 'bg-white/20 text-white shadow-sm')
+                      : (isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white')
                   }`}
                   style={density === d ? { color: palette.primary } : undefined}
                 >
@@ -161,8 +161,8 @@ export const DisplayViewBar: React.FC<DisplayViewBarProps> = ({
                     onClick={() => onListColumnsChange(c)}
                     className={`w-6 h-6 rounded-md text-[11px] font-mono font-bold transition-all ${
                       listColumns === c
-                        ? 'bg-white text-black shadow-sm dark:bg-white/20 dark:text-white'
-                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                        ? (isLight ? 'bg-slate-200 text-slate-900 shadow-sm' : 'bg-white/20 text-white shadow-sm')
+                        : (isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white')
                     }`}
                     style={listColumns === c ? { color: palette.primary } : undefined}
                   >
@@ -209,8 +209,8 @@ export const DisplayViewBar: React.FC<DisplayViewBarProps> = ({
                   onClick={() => onMotionMultiplierChange(m.val)}
                   className={`px-1.5 h-6 rounded-md text-[10px] font-mono font-bold transition-all ${
                     motionMultiplier === m.val
-                      ? 'bg-white text-black shadow-sm dark:bg-white/20 dark:text-white'
-                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                      ? (isLight ? 'bg-slate-200 text-slate-900 shadow-sm' : 'bg-white/20 text-white shadow-sm')
+                      : (isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white')
                   }`}
                   style={motionMultiplier === m.val ? { color: palette.primary } : undefined}
                 >

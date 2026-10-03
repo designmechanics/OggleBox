@@ -110,6 +110,19 @@ export const MediaStage: React.FC<MediaStageProps> = ({
     onSelectMedia(item);
   };
 
+  // Reset scroll position and set overflow mode on view mode change
+  useEffect(() => {
+    const wr = wrapRef.current;
+    if (!wr) return;
+    wr.scrollTop = 0;
+    if (view === 'list' || view === 'grid') {
+      wr.style.overflowY = 'auto';
+      wr.style.overflowX = 'hidden';
+    } else {
+      wr.style.overflow = 'hidden';
+    }
+  }, [view]);
+
   // GSAP Layout Orchestration (Grid & Carousel placement)
   useEffect(() => {
     const st = stageRef.current;
@@ -236,7 +249,11 @@ export const MediaStage: React.FC<MediaStageProps> = ({
   }, [items, view, density, stageWidth, motionMultiplier, selectedIds]);
 
   return (
-    <div ref={rootRef} className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+    <div
+      ref={rootRef}
+      className="relative flex-1 min-h-0 flex flex-col overflow-hidden mt-4"
+      style={{ marginTop: '16px' }}
+    >
       {/* 3D Directional Catalog Backdrop Watermark */}
       {isCarousel && (
         <StageWatermark
@@ -252,8 +269,11 @@ export const MediaStage: React.FC<MediaStageProps> = ({
       <div
         ref={wrapRef}
         className={`relative z-10 flex-1 min-h-0 px-4 md:px-6 custom-scrollbar ${
-          view === 'list' || view === 'grid' ? 'overflow-y-auto' : 'overflow-hidden'
+          view === 'list' || view === 'grid'
+            ? 'pt-2 pb-12 overflow-y-auto'
+            : 'overflow-hidden'
         }`}
+        style={view === 'list' || view === 'grid' ? { paddingTop: '0.5rem' } : undefined}
       >
         {view === 'list' ? (
           <MediaListView

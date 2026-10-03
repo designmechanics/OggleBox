@@ -127,7 +127,7 @@ export const MediaListView: React.FC<MediaListViewProps> = ({
         </button>
 
         {/* Title */}
-        <span className="flex-1 min-w-0 font-medium text-sm truncate" title={item.title}>
+        <span className={`flex-1 min-w-0 font-medium text-sm truncate ${isLight ? 'text-slate-900' : 'text-slate-100'}`} title={item.title}>
           {item.title}
         </span>
 
@@ -155,7 +155,9 @@ export const MediaListView: React.FC<MediaListViewProps> = ({
                 e.stopPropagation();
                 onInfo(item);
               }}
-              className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+              className={`p-1 rounded-md transition-colors ${
+                isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/60' : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
               title="DEEP Metadata & Info"
             >
               <Info className="w-3.5 h-3.5" />
@@ -168,7 +170,7 @@ export const MediaListView: React.FC<MediaListViewProps> = ({
 
   return (
     <div
-      className="w-full pb-16"
+      className="w-full pt-4 md:pt-6 pb-16"
       style={{
         display: columns > 1 ? 'grid' : 'flex',
         gridTemplateColumns: columns > 1 ? `repeat(${columns}, minmax(0, 1fr))` : undefined,

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Play, Download, Upload, Users, HardDrive, FileVideo, AlertCircle, X,
   Pause, Trash2, Copy, Check, Clock, Percent, Activity, ChevronDown, ChevronUp,
-  Radio, Zap, Globe, Sparkles, Server, Terminal, ShieldCheck, RefreshCw, Plus,
+  Radio, Zap, Globe, Server, Terminal, ShieldCheck, RefreshCw, Plus,
   FolderDown, Square, Music, Disc, FileArchive, ArrowRight, CheckCircle2
 } from 'lucide-react';
 import type { PrimaryColorKey, ThemeMode, TorrentItem, TorrentFileItem, MediaItem } from '../types';
@@ -12,21 +12,6 @@ interface WebTorrentViewProps {
   primaryColor: PrimaryColorKey;
   onPlayMedia?: (item: MediaItem) => void;
 }
-
-const FEATURED_TORRENTS = [
-  {
-    name: 'Sintel (Open Movie)',
-    magnet: 'magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empirejs.org%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com'
-  },
-  {
-    name: 'Tears of Steel (4K Sci-Fi Short)',
-    magnet: 'magnet:?xt=urn:btih:209c8226b299b3083d9418641198f1f1d1aa7556&dn=Tears+of+Steel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com'
-  },
-  {
-    name: 'Big Buck Bunny (Animation)',
-    magnet: 'magnet:?xt=urn:btih:dd8255edd6471b77636a66d4dd23863792ee5a79&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com'
-  }
-];
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes === 0) return '0 B';
@@ -280,7 +265,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
   });
 
   return (
-    <div className="wt-container custom-scrollbar">
+    <div className={`wt-container custom-scrollbar ${isLight ? 'light' : ''}`}>
       {/* Top Banner: Daemon Telemetry & Torrent Input */}
       <div className="wt-header-banner">
         <div className="wt-banner-top">
@@ -317,7 +302,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                 </p>
               </div>
             </div>
-            <div style={{ width: '1px', height: '32px', backgroundColor: '#334155' }} />
+            <div style={{ width: '1px', height: '32px', backgroundColor: isLight ? '#cbd5e1' : '#334155' }} />
             <div className="wt-speed-item">
               <Upload style={{ width: '16px', height: '16px', color: '#34d399' }} />
               <div>
@@ -381,31 +366,6 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
           />
         </form>
 
-        {/* Featured Legal Open-Source Torrents */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', fontSize: '0.75rem' }}>
-          <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            <Sparkles style={{ width: '14px', height: '14px', color: '#fbbf24' }} /> Instant Demos:
-          </span>
-          {FEATURED_TORRENTS.map((demo) => (
-            <button
-              key={demo.name}
-              type="button"
-              onClick={() => handleAddMagnet(demo.magnet)}
-              style={{
-                fontSize: '11px',
-                padding: '0.25rem 0.625rem',
-                borderRadius: '0.5rem',
-                border: '1px solid #334155',
-                backgroundColor: '#1e293b',
-                color: '#cbd5e1',
-                cursor: 'pointer'
-              }}
-            >
-              {demo.name}
-            </button>
-          ))}
-        </div>
-
         {/* Toast / Notification Banners */}
         {actionSuccess && (
           <div style={{ padding: '0.5rem 1rem', borderRadius: '0.5rem', backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', color: '#34d399', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
@@ -451,18 +411,18 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
       {/* Torrent List (Clear, Logical, Planned Table of Items) */}
       {filteredTorrents.length === 0 ? (
         <div style={{
-          backgroundColor: '#0f172a',
-          border: '1px solid #334155',
+          backgroundColor: isLight ? '#ffffff' : '#0f172a',
+          border: isLight ? '1px solid #e2e8f0' : '1px solid #334155',
           borderRadius: '1.25rem',
           padding: '3rem',
           textAlign: 'center',
-          color: '#94a3b8'
+          color: isLight ? '#64748b' : '#94a3b8'
         }}>
           <Radio style={{ width: '48px', height: '48px', color: '#22d3ee', margin: '0 auto 1rem', opacity: 0.6 }} />
-          <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: isLight ? '#0f172a' : '#ffffff', marginBottom: '0.5rem' }}>
             No BitTorrent downloads found
           </h3>
-          <p style={{ fontSize: '0.8125rem', maxWidth: '400px', margin: '0 auto', color: '#64748b' }}>
+          <p style={{ fontSize: '0.8125rem', maxWidth: '400px', margin: '0 auto', color: isLight ? '#64748b' : '#64748b' }}>
             Paste a magnet link or click one of the open source demo buttons above to initiate downloads.
           </p>
         </div>
@@ -504,7 +464,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                         {t.files.length} {t.files.length === 1 ? 'file' : 'files'}
                       </span>
                       <span style={{ color: '#475569' }}>•</span>
-                      <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#e2e8f0', fontWeight: 700 }}>
+                      <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: isLight ? '#0f172a' : '#e2e8f0', fontWeight: 700 }}>
                         {t.lengthFormatted}
                       </span>
                       <span style={{ color: '#475569' }}>•</span>
@@ -652,9 +612,9 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                 {deleteConfirmId === t.id && (
                   <div style={{
                     padding: '0.75rem 1.25rem',
-                    backgroundColor: 'rgba(244, 63, 94, 0.15)',
-                    borderTop: '1px solid rgba(244, 63, 94, 0.3)',
-                    borderBottom: '1px solid rgba(244, 63, 94, 0.3)',
+                    backgroundColor: isLight ? '#ffe4e6' : 'rgba(244, 63, 94, 0.15)',
+                    borderTop: isLight ? '1px solid #fecdd3' : '1px solid rgba(244, 63, 94, 0.3)',
+                    borderBottom: isLight ? '1px solid #fecdd3' : '1px solid rgba(244, 63, 94, 0.3)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -663,11 +623,11 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                     fontSize: '12px',
                     fontFamily: 'var(--font-mono)'
                   }}>
-                    <span style={{ color: '#fecdd3' }}>Delete "{t.name}" from client?</span>
+                    <span style={{ color: isLight ? '#9f1239' : '#fecdd3', fontWeight: 600 }}>Delete "{t.name}" from client?</span>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button
                         onClick={() => handleDelete(t.id, false)}
-                        style={{ padding: '0.25rem 0.75rem', borderRadius: '0.5rem', backgroundColor: '#334155', color: '#ffffff', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
+                        style={{ padding: '0.25rem 0.75rem', borderRadius: '0.5rem', backgroundColor: isLight ? '#e2e8f0' : '#334155', color: isLight ? '#0f172a' : '#ffffff', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
                       >
                         Remove Torrent Only
                       </button>
@@ -679,7 +639,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                       </button>
                       <button
                         onClick={() => setDeleteConfirmId(null)}
-                        style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0.25rem' }}
+                        style={{ background: 'transparent', border: 'none', color: isLight ? '#64748b' : '#94a3b8', cursor: 'pointer', padding: '0.25rem' }}
                       >
                         Cancel
                       </button>
@@ -838,15 +798,15 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                         <div className="wt-section-content" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
                           <div>
                             <p style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>InfoHash</p>
-                            <p style={{ color: '#cbd5e1', wordBreak: 'break-all', userSelect: 'all' }}>{t.infoHash}</p>
+                            <p style={{ color: isLight ? '#334155' : '#cbd5e1', wordBreak: 'break-all', userSelect: 'all' }}>{t.infoHash}</p>
                           </div>
                           <div>
                             <p style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Host Directory</p>
-                            <p style={{ color: '#cbd5e1', wordBreak: 'break-all', userSelect: 'all' }}>{t.savePath}</p>
+                            <p style={{ color: isLight ? '#334155' : '#cbd5e1', wordBreak: 'break-all', userSelect: 'all' }}>{t.savePath}</p>
                           </div>
                           <div>
                             <p style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Total Downloaded</p>
-                            <p style={{ color: '#e2e8f0', fontWeight: 700 }}>{formatBytes(t.downloaded)}</p>
+                            <p style={{ color: isLight ? '#0f172a' : '#e2e8f0', fontWeight: 700 }}>{formatBytes(t.downloaded)}</p>
                           </div>
                           <div>
                             <p style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Category</p>
@@ -885,7 +845,7 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                                 {limitedWires.map((wire, idx) => (
                                   <div key={idx} className="wt-peer-item">
                                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
-                                      <p style={{ fontWeight: 700, color: '#ffffff' }}>{wire.client}</p>
+                                      <p style={{ fontWeight: 700, color: isLight ? '#0f172a' : '#ffffff' }}>{wire.client}</p>
                                       <p style={{ fontSize: '9px', color: '#64748b' }}>{wire.address}</p>
                                     </div>
                                     <span style={{ color: '#22d3ee', fontWeight: 700 }}>

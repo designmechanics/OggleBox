@@ -77,11 +77,15 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({
             transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)'
           }}
           onMouseEnter={(e) => {
+            const cardEl = e.currentTarget.closest('[data-card]') as HTMLElement;
+            if (cardEl && !isCarousel) cardEl.style.zIndex = '25';
             e.currentTarget.style.transform = 'translateY(-3px)';
             e.currentTarget.style.boxShadow = palette.hoverGlow;
             e.currentTarget.style.borderColor = palette.primary;
           }}
           onMouseLeave={(e) => {
+            const cardEl = e.currentTarget.closest('[data-card]') as HTMLElement;
+            if (cardEl && !isCarousel) cardEl.style.zIndex = '10';
             e.currentTarget.style.transform = 'translateY(0)';
             e.currentTarget.style.boxShadow = depth.boxShadow;
             e.currentTarget.style.borderColor = depth.borderColor;
@@ -207,19 +211,29 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({
             {/* Category and Size Chips */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {item.category && item.category !== 'Root' && (
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono tracking-wide uppercase bg-slate-200/50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 truncate max-w-[120px]">
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono tracking-wide uppercase border truncate max-w-[120px] ${
+                  isLight
+                    ? 'bg-slate-100 border-slate-300 text-slate-600'
+                    : 'bg-slate-800/80 border-slate-700 text-slate-300'
+                }`}>
                   {item.category.split('/').pop()}
                 </span>
               )}
               {item.sizeFormatted && (
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono tracking-wide uppercase bg-slate-200/30 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono tracking-wide uppercase border ${
+                  isLight
+                    ? 'bg-slate-100/70 border-slate-300 text-slate-500'
+                    : 'bg-slate-800/50 border-slate-700/60 text-slate-400'
+                }`}>
                   {item.sizeFormatted}
                 </span>
               )}
             </div>
 
             {/* Filename & Quick Copy */}
-            <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-200/40 dark:border-slate-800/60">
+            <div className={`flex items-center justify-between gap-2 text-[10px] font-mono pt-1 border-t ${
+              isLight ? 'border-slate-200 text-slate-600' : 'border-white/10 text-slate-400'
+            }`}>
               <span className="truncate" title={item.filename}>
                 {item.filename}
               </span>

@@ -9,9 +9,12 @@ import VideoPlayer from './components/VideoPlayer';
 import CategorySidebar from './components/CategorySidebar';
 import SettingsModal from './components/SettingsModal';
 import DeepMetaModal from './components/DeepMetaModal';
+import ResumeModal from './components/ResumeModal';
+import MediaDetailModal from './components/MediaDetailModal';
 import WebTorrentView from './components/WebTorrentView';
 import { MediaStage } from './components/media/MediaStage';
 import { DisplayViewBar } from './components/media/DisplayViewBar';
+import { AppLogo } from './components/AppLogo';
 import { executeViewTransition } from './motion/transitionChoreography';
 
 gsap.registerPlugin(useGSAP);
@@ -372,11 +375,13 @@ export default function App() {
             isLight ? 'bg-white/80 backdrop-blur-xl border-slate-200 shadow-sm' : 'bg-black/40 backdrop-blur-xl border-white/10'
           }`}>
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setActiveTab('library'); setActiveCategory("All"); }}>
-                <div className={`w-8.5 h-8.5 rounded-xl flex items-center justify-center shadow-lg bg-gradient-to-br ${colorClasses.gradient}`}>
-                  <Play className="w-4 h-4 text-white fill-white ml-0.5" />
-                </div>
-                <h1 className="text-xl font-black italic tracking-tight uppercase flex items-center gap-1.5">
+              <div className="flex items-center gap-3.5 cursor-pointer group" onClick={() => { setActiveTab('library'); setActiveCategory("All"); }}>
+                <AppLogo
+                  theme={settings.theme}
+                  accent={settings.primaryColor}
+                  size={42}
+                />
+                <h1 className="font-title text-2xl md:text-3xl font-black italic tracking-wide uppercase flex items-center gap-1.5 leading-none select-none">
                   <span className={colorClasses.text}>{firstWord}</span>
                   {remainingWords && <span className={isLight ? "text-slate-900" : "text-white"}>{remainingWords}</span>}
                 </h1>
@@ -568,183 +573,43 @@ export default function App() {
           )}
 
           {/* Resume Playback Modal */}
-          {showResumeModal && createPortal(
-            <div 
-              className="fixed inset-0 z-modal z-[99999] pointer-events-auto flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
-              style={{ zIndex: 99999 }}
-            >
-              <div className={`border rounded-2xl p-6 max-w-sm w-full shadow-2xl relative ${
-                isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0f172a] border-white/10 text-white'
-              }`}>
-                <h3 className="text-xl font-bold mb-2">Resume Playback?</h3>
-                <p className={`text-sm mb-6 ${isLight ? 'text-slate-500' : 'text-white/60'}`}>
-                  You left off at {Math.round(parseFloat(localStorage.getItem(`motionstream_progress_percent_${showResumeModal.id}`) || '0'))}%
-                </p>
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => {
-                      localStorage.setItem(`motionstream_progress_${showResumeModal.id}`, '0');
-                      localStorage.setItem(`motionstream_progress_percent_${showResumeModal.id}`, '0');
-                      setActiveMedia(showResumeModal);
-                      setShowResumeModal(null);
-                    }}
-                    className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
-                      isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-800' : 'bg-white/10 hover:bg-white/20 text-white'
-                    }`}
-                  >
-                    Start Over
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setActiveMedia(showResumeModal);
-                      setShowResumeModal(null);
-                    }}
-                    className={`flex-1 py-2 rounded-lg font-bold text-white shadow-lg transition-all bg-gradient-to-r ${colorClasses.gradient}`}
-                  >
-                    Resume
-                  </button>
-                </div>
-                <button onClick={() => setShowResumeModal(null)} className="absolute top-4 right-4 text-white/50 hover:text-white">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>,
-            document.body
-          )}
+          <ResumeModal
+            isOpen={!!showResumeModal}
+            item={showResumeModal}
+            onClose={() => setShowResumeModal(null)}
+            onResume={(item) => {
+              setActiveMedia(item);
+              setShowResumeModal(null);
+            }}
+            onStartOver={(item) => {
+              localStorage.setItem(`motionstream_progress_${item.id}`, '0');
+              localStorage.setItem(`motionstream_progress_percent_${item.id}`, '0');
+              setActiveMedia(item);
+              setShowResumeModal(null);
+            }}
+            theme={settings.theme}
+            primaryColor={settings.primaryColor}
+          />
           
           {/* File Info Details Modal */}
-          {selectedDetailMedia && createPortal(
-            <div 
-              className="fixed inset-0 z-modal z-[99999] pointer-events-auto flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
-              style={{ zIndex: 99999 }}
-            >
-              <div className={`border rounded-3xl p-6 max-w-lg w-full shadow-2xl relative flex flex-col gap-5 ${
-                isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0f172a] border-white/10 text-white'
-              }`}>
-                <button 
-                  onClick={() => setSelectedDetailMedia(null)}
-                  className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                    isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-white/60 hover:text-white'
-                  }`}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-28 rounded-xl overflow-hidden relative border border-white/10 shrink-0 bg-black flex items-center justify-center">
-                    {selectedDetailMedia.mediaType === 'audio' ? (
-                      <div className="w-full h-full bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 flex flex-col items-center justify-center p-2 text-center">
-                        <Music className="w-8 h-8 text-indigo-400 mb-1" />
-                        <span className="text-[8px] font-mono text-indigo-300 uppercase font-bold">Audio Track</span>
-                      </div>
-                    ) : selectedDetailMedia.mediaType === 'binary' ? (
-                      <div className="w-full h-full bg-gradient-to-br from-amber-950 via-slate-900 to-orange-950 flex flex-col items-center justify-center p-2 text-center">
-                        <Disc className="w-8 h-8 text-amber-400 mb-1" />
-                        <span className="text-[8px] font-mono text-amber-300 uppercase font-bold">ISO / Archive</span>
-                      </div>
-                    ) : (
-                      <img src={selectedDetailMedia.poster} alt={selectedDetailMedia.title} className="w-full h-full object-cover" />
-                    )}
-                  </div>
-                  <div className="overflow-hidden">
-                    <span className={`text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded border ${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border}`}>
-                      media/{selectedDetailMedia.category || 'Root'}
-                    </span>
-                    <h3 className="text-lg font-bold mt-1 truncate">{selectedDetailMedia.title}</h3>
-                    <p className={`text-xs font-mono truncate ${isLight ? 'text-slate-500' : 'text-white/50'}`}>
-                      {selectedDetailMedia.filename}
-                    </p>
-                  </div>
-                </div>
-
-                <div className={`grid grid-cols-2 gap-3 text-xs p-4 rounded-2xl border ${
-                  isLight ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-white/5 border-white/5 text-white/70'
-                }`}>
-                  <div className="flex items-center gap-2">
-                    <FileText className={`w-4 h-4 ${colorClasses.text}`} />
-                    <span>Format: <strong>{selectedDetailMedia.format || 'MP4'}</strong></span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <HardDrive className={`w-4 h-4 ${colorClasses.text}`} />
-                    <span>Size: <strong>{selectedDetailMedia.sizeFormatted || 'Unknown'}</strong></span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Calendar className={`w-4 h-4 ${colorClasses.text}`} />
-                    <span>Modified: <strong>{selectedDetailMedia.modifiedAt || selectedDetailMedia.year}</strong></span>
-                  </div>
-                  <div className="flex items-center gap-2 truncate">
-                    <Search className={`w-4 h-4 ${colorClasses.text} shrink-0`} />
-                    <span className="truncate">Path: <strong>{selectedDetailMedia.path}</strong></span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {selectedDetailMedia.mediaType === 'binary' ? (
-                    <a
-                      href={selectedDetailMedia.url}
-                      download={selectedDetailMedia.filename}
-                      className="flex-1 text-black font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:opacity-90 transition-opacity bg-gradient-to-r from-amber-400 to-amber-500"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Download File</span>
-                    </a>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        const item = selectedDetailMedia;
-                        setSelectedDetailMedia(null);
-                        openPlayer(item);
-                      }}
-                      className={`flex-1 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:opacity-90 transition-opacity ${
-                        selectedDetailMedia.mediaType === 'audio'
-                          ? 'bg-gradient-to-r from-indigo-500 to-purple-600'
-                          : `bg-gradient-to-r ${colorClasses.gradient}`
-                      }`}
-                    >
-                      {selectedDetailMedia.mediaType === 'audio' ? (
-                        <>
-                          <Music className="w-4 h-4" />
-                          <span>Play Audio</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-4 h-4 fill-current" />
-                          <span>Play Video</span>
-                        </>
-                      )}
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => {
-                      const item = selectedDetailMedia;
-                      setSelectedDetailMedia(null);
-                      setSelectedDeepMedia(item);
-                      setShowDeepMetaModal(true);
-                    }}
-                    className={`font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 border transition-all ${colorClasses.bgLight} ${colorClasses.text} ${colorClasses.border} hover:scale-105`}
-                  >
-                    <Zap className="w-4 h-4" />
-                    <span>DEEP Meta</span>
-                  </button>
-
-                  {selectedDetailMedia.mediaType !== 'audio' && selectedDetailMedia.mediaType !== 'binary' && (
-                    <button
-                      onClick={() => handleRegenerateThumbnail(selectedDetailMedia)}
-                      disabled={regenerating}
-                      className={`font-medium py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors border ${
-                        isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
-                      }`}
-                      title="Regenerate Poster Thumbnail"
-                    >
-                      <RefreshCw className={`w-4 h-4 ${regenerating ? `animate-spin ${colorClasses.text}` : ''}`} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>,
-            document.body
-          )}
+          <MediaDetailModal
+            isOpen={!!selectedDetailMedia}
+            item={selectedDetailMedia}
+            onClose={() => setSelectedDetailMedia(null)}
+            onPlay={(item) => {
+              setSelectedDetailMedia(null);
+              openPlayer(item);
+            }}
+            onOpenDeepMeta={(item) => {
+              setSelectedDetailMedia(null);
+              setSelectedDeepMedia(item);
+              setShowDeepMetaModal(true);
+            }}
+            onRegenerateThumbnail={(item) => handleRegenerateThumbnail(item)}
+            regenerating={regenerating}
+            theme={settings.theme}
+            primaryColor={settings.primaryColor}
+          />
 
           {/* Settings Modal */}
           <SettingsModal 

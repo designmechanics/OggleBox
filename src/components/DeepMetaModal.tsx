@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Cpu, Film, Volume2, HardDrive, Tag, Loader2, Play, Calendar, Clock, Layers, ShieldCheck } from 'lucide-react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
+import { X, Cpu, Film, Volume2, HardDrive, Tag, Loader2, Play } from 'lucide-react';
 import type { MediaItem, DeepMeta, ThemeMode } from '../types';
 
 interface DeepMetaModalProps {
@@ -21,6 +23,10 @@ export default function DeepMetaModal({
   const [loading, setLoading] = useState(false);
   const [meta, setMeta] = useState<DeepMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isClosing, setIsClosing] = useState(false);
+
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen && item) {
@@ -47,12 +53,64 @@ export default function DeepMetaModal({
           setLoading(false);
         })
         .catch((err) => {
-          console.error("Deep meta fetch error:", err);
-          setError("Failed to fetch deep ffprobe metadata from server");
+          console.error('Deep meta fetch error:', err);
+          setError('Failed to fetch deep ffprobe metadata from server');
           setLoading(false);
         });
     }
   }, [isOpen, item]);
+
+  // GSAP 3D Entrance Animation
+  useGSAP(() => {
+    if (!isOpen) return;
+
+    if (backdropRef.current) {
+      gsap.fromTo(backdropRef.current,
+        { opacity: 0 },
+        { opacity: 1, duration: 0.28, ease: 'power2.out' }
+      );
+    }
+
+    if (cardRef.current) {
+      gsap.fromTo(cardRef.current,
+        { opacity: 0, scale: 0.92, y: 24, rotateX: 6 },
+        { opacity: 1, scale: 1, y: 0, rotateX: 0, duration: 0.38, ease: 'back.out(1.2)' }
+      );
+    }
+  }, [isOpen]);
+
+  // Smooth Animated Exit
+  const handleAnimatedClose = (afterClose?: () => void) => {
+    if (isClosing) return;
+    setIsClosing(true);
+
+    const tl = gsap.timeline({
+      onComplete: () => {
+        setIsClosing(false);
+        onClose();
+        if (afterClose) afterClose();
+      }
+    });
+
+    if (cardRef.current) {
+      tl.to(cardRef.current, {
+        opacity: 0,
+        y: 18,
+        scale: 0.94,
+        rotateX: -4,
+        duration: 0.22,
+        ease: 'power2.in'
+      }, 0);
+    }
+
+    if (backdropRef.current) {
+      tl.to(backdropRef.current, {
+        opacity: 0,
+        duration: 0.22,
+        ease: 'power2.in'
+      }, 0);
+    }
+  };
 
   if (!isOpen || !item) return null;
 
@@ -86,15 +144,28 @@ export default function DeepMetaModal({
   };
 
   return createPortal(
-    <div 
-      className="fixed inset-0 z-modal z-[99999] pointer-events-auto flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+    <div
+      ref={backdropRef}
+      className="fixed inset-0 z-modal z-[99999] pointer-events-auto flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
       style={{ zIndex: 99999 }}
+      onClick={(e) => {
+        if (e.target === backdropRef.current) handleAnimatedClose();
+      }}
     >
-      <div className={`w-full max-w-2xl rounded-3xl border shadow-2xl overflow-hidden transition-all duration-300 flex flex-col max-h-[85vh] ${
-        isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-white/10 text-white'
-      }`}>
+      <div
+        ref={cardRef}
+        className={`w-full max-w-2xl rounded-3xl border shadow-2xl overflow-hidden flex flex-col max-h-[85vh] ${
+          isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-white/10 text-white'
+        }`}
+        style={{
+          boxShadow: isLight
+            ? '0 24px 64px -12px rgba(15, 23, 42, 0.18), 0 0 1px 1px rgba(15, 23, 42, 0.05)'
+            : '0 30px 80px -15px rgba(0, 0, 0, 0.9), 0 0 1px 1px rgba(255, 255, 255, 0.1)',
+          transformStyle: 'preserve-3d'
+        }}
+      >
         {/* Header */}
-        <div className={`px-6 py-5 border-b flex items-center justify-between ${
+        <div className={`px-6 py-5 border-b flex items-center justify-between shrink-0 ${
           isLight ? 'border-slate-200 bg-slate-50' : 'border-white/10 bg-white/5'
         }`}>
           <div className="flex items-center gap-3">
@@ -114,17 +185,19 @@ export default function DeepMetaModal({
             </div>
           </div>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={() => handleAnimatedClose()}
             className={`p-2 rounded-full transition-colors ${
               isLight ? 'hover:bg-slate-200 text-slate-500 hover:text-slate-900' : 'hover:bg-white/10 text-white/60 hover:text-white'
             }`}
+            title="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
+        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-5">
           {loading ? (
             <div className="py-16 flex flex-col items-center justify-center gap-3">
               <Loader2 className="w-10 h-10 text-cyan-400 animate-spin" />
@@ -137,7 +210,7 @@ export default function DeepMetaModal({
           ) : meta ? (
             <>
               {/* File Container Overview */}
-              <div className={`p-4 rounded-2xl border space-y-3 ${
+              <div className={`p-4 rounded-2xl border flex flex-col gap-3 ${
                 isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'
               }`}>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
@@ -170,13 +243,13 @@ export default function DeepMetaModal({
                     <span className="font-semibold">{meta.modified ? new Date(meta.modified).toLocaleDateString() : 'N/A'}</span>
                   </div>
                 </div>
-                <div className="pt-2 border-t border-white/5 text-[11px] font-mono opacity-60 truncate">
+                <div className={`pt-2 border-t text-[11px] font-mono opacity-60 truncate ${isLight ? 'border-slate-200' : 'border-white/5'}`}>
                   Path: {item.path || item.filename}
                 </div>
               </div>
 
               {/* Video Stream Specs */}
-              <div className={`p-4 rounded-2xl border space-y-3 ${
+              <div className={`p-4 rounded-2xl border flex flex-col gap-3 ${
                 isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'
               }`}>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
@@ -220,7 +293,7 @@ export default function DeepMetaModal({
               </div>
 
               {/* Audio Stream Specs */}
-              <div className={`p-4 rounded-2xl border space-y-3 ${
+              <div className={`p-4 rounded-2xl border flex flex-col gap-3 ${
                 isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'
               }`}>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
@@ -249,7 +322,7 @@ export default function DeepMetaModal({
 
               {/* Tags / Metadata */}
               {meta.tags && Object.keys(meta.tags).length > 0 && (
-                <div className={`p-4 rounded-2xl border space-y-3 ${
+                <div className={`p-4 rounded-2xl border flex flex-col gap-3 ${
                   isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'
                 }`}>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
@@ -271,23 +344,22 @@ export default function DeepMetaModal({
         </div>
 
         {/* Footer */}
-        <div className={`px-6 py-4 border-t flex justify-between items-center ${
+        <div className={`px-6 py-4 border-t flex justify-between items-center shrink-0 ${
           isLight ? 'border-slate-200 bg-slate-50' : 'border-white/10 bg-white/5'
         }`}>
           {onPlay && (
             <button
-              onClick={() => {
-                onClose();
-                onPlay(item);
-              }}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-bold text-xs shadow-md hover:scale-105 transition-transform flex items-center gap-2"
+              type="button"
+              onClick={() => handleAnimatedClose(() => onPlay(item))}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white font-bold text-xs shadow-md hover:scale-105 transition-transform flex items-center gap-2"
             >
               <Play className="w-4 h-4 fill-current" />
               Play Media
             </button>
           )}
           <button
-            onClick={onClose}
+            type="button"
+            onClick={() => handleAnimatedClose()}
             className={`px-5 py-2.5 rounded-xl font-bold text-xs border transition-colors ml-auto ${
               isLight ? 'bg-slate-200 text-slate-800 border-slate-300 hover:bg-slate-300' : 'bg-white/10 text-white border-white/10 hover:bg-white/20'
             }`}

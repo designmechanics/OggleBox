@@ -479,7 +479,67 @@ function loadLibraryCache(): any[] | null {
   return null;
 }
 
+let H264_ENCODER = "libx264";
+let HEVC_ENCODER = "libx265";
+
+async function detectHardwareEncoders() {
+  logStep("Boot", "HWProbe", "Probing system for hardware-accelerated encoders...");
+  return new Promise<void>((resolve) => {
+    ffmpeg.getAvailableEncoders((err, encoders) => {
+      if (err || !encoders) {
+        logStep("Boot", "HWProbe", "Failed to query encoders, defaulting to CPU (libx264).");
+        return resolve();
+      }
+      
+      const testEncoder = (encoder: string): Promise<boolean> => {
+        return new Promise((res) => {
+          ffmpeg()
+            .input('color=c=black:s=1280x720')
+            .inputFormat('lavfi')
+            .duration(0.1)
+            .videoCodec(encoder)
+            .format('null')
+            .on('error', () => res(false))
+            .on('end', () => res(true))
+            .save('-');
+        });
+      };
+
+      const checkEncoders = async () => {
+        if (encoders['h264_nvenc'] && await testEncoder('h264_nvenc')) {
+          H264_ENCODER = 'h264_nvenc';
+          logStep("Boot", "HWProbe", "NVIDIA NVENC H.264 acceleration ENABLED.");
+        } else if (encoders['h264_qsv'] && await testEncoder('h264_qsv')) {
+          H264_ENCODER = 'h264_qsv';
+          logStep("Boot", "HWProbe", "Intel QuickSync H.264 acceleration ENABLED.");
+        } else if (encoders['h264_videotoolbox'] && await testEncoder('h264_videotoolbox')) {
+          H264_ENCODER = 'h264_videotoolbox';
+          logStep("Boot", "HWProbe", "Apple VideoToolbox H.264 acceleration ENABLED.");
+        } else if (encoders['h264_amf'] && await testEncoder('h264_amf')) {
+          H264_ENCODER = 'h264_amf';
+          logStep("Boot", "HWProbe", "AMD AMF H.264 acceleration ENABLED.");
+        }
+
+        if (encoders['hevc_nvenc'] && await testEncoder('hevc_nvenc')) {
+          HEVC_ENCODER = 'hevc_nvenc';
+        } else if (encoders['hevc_qsv'] && await testEncoder('hevc_qsv')) {
+          HEVC_ENCODER = 'hevc_qsv';
+        } else if (encoders['hevc_videotoolbox'] && await testEncoder('hevc_videotoolbox')) {
+          HEVC_ENCODER = 'hevc_videotoolbox';
+        } else if (encoders['hevc_amf'] && await testEncoder('hevc_amf')) {
+          HEVC_ENCODER = 'hevc_amf';
+        }
+        
+        resolve();
+      };
+      
+      checkEncoders();
+    });
+  });
+}
+
 async function startServer() {
+  await detectHardwareEncoders();
   logStep("Boot", "Step 3/5", "Preloading RAM cache from library-cache.json...");
   const preloaded = loadLibraryCache();
 
@@ -768,7 +828,8 @@ async function startServer() {
     logStep("Transcode", "Step 3/5", `Source file size: ${formatBytes(stat.size)}`);
 
     const startTime = req.query.start ? parseFloat(req.query.start as string) : 0;
-    const targetCodec = req.query.codec === 'libx265' ? 'libx265' : 'libx264';
+    const isHEVC = req.query.codec === 'libx265';
+    const targetCodec = isHEVC ? HEVC_ENCODER : H264_ENCODER;
     logStep("Transcode", "Step 4/5", `Spawning FFmpeg pipeline (${targetCodec}/AAC MP4) seeking to t=${startTime}s...`);
 
     res.contentType('video/mp4');
@@ -782,7 +843,7 @@ async function startServer() {
       '-threads 0'
     ];
 
-    if (targetCodec === 'libx265') {
+    if (isHEVC) {
       ffmpegOptions.push('-tag:v hvc1'); // Required for Apple devices to play HEVC mp4 streams natively
     }
 
@@ -1240,7 +1301,8 @@ async function startServer() {
     }
 
     const startTime = req.query.start ? parseFloat(req.query.start as string) : 0;
-    const targetCodec = req.query.codec === "libx265" ? "libx265" : "libx264";
+    const isHEVC = req.query.codec === "libx265";
+    const targetCodec = isHEVC ? HEVC_ENCODER : H264_ENCODER;
     const profile = (req.query.profile as string) || "netflix";
 
     res.contentType("video/mp4");
@@ -1252,7 +1314,7 @@ async function startServer() {
       "-threads 0"
     ];
 
-    if (targetCodec === "libx265") {
+    if (isHEVC) {
       ffmpegOptions.push("-tag:v hvc1");
     }
 

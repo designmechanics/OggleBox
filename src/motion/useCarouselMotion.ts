@@ -69,6 +69,18 @@ export function useCarouselMotion({
   const accentRef = useRef(accent);
   accentRef.current = accent;
 
+  // Sync external focusIndex changes (e.g. changing category resets focusIndex to 0)
+  useEffect(() => {
+    if (focusIndex !== liveFocusRef.current) {
+      liveFocusRef.current = focusIndex;
+      // Also reset gesture states so it doesn't try to commit an old state
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
+    }
+  }, [focusIndex]);
+
   // Imperative Driver: Tweens cards in CAROUSEL_WINDOW directly
   const moveCarouselTo = useCallback((target: number) => {
     const list = itemsRef.current;

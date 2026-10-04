@@ -779,7 +779,7 @@ async function startServer() {
       '-pix_fmt yuv420p',
       '-ac 2',
       '-movflags frag_keyframe+empty_moov+default_base_moof',
-      '-threads 2'
+      '-threads 0'
     ];
 
     if (targetCodec === 'libx265') {
@@ -966,7 +966,17 @@ async function startServer() {
       return fs.createReadStream(cachePath).pipe(res);
     }
 
-    const command = ffmpeg(filePath)
+    let command: any;
+    let isAborted = false;
+
+    req.on('close', () => {
+      isAborted = true;
+      if (command) {
+        command.kill('SIGKILL');
+      }
+    });
+
+    command = ffmpeg(filePath)
       .seekInput(time)
       .frames(1)
       .format('image2')
@@ -977,6 +987,7 @@ async function startServer() {
       });
 
     command.save(cachePath).on('end', () => {
+      if (isAborted) return;
       res.setHeader("Content-Type", "image/jpeg");
       res.setHeader("Cache-Control", "public, max-age=31536000");
       if (fs.existsSync(cachePath)) {

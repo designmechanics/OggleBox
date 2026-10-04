@@ -949,7 +949,10 @@ async function startServer() {
     if (range) {
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
-      let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      
+      // Default to bounding the chunk to 10MB max to prevent huge streams on scrub
+      const CHUNK_MAX = 10 * 1024 * 1024;
+      let end = parts[1] ? parseInt(parts[1], 10) : Math.min(start + CHUNK_MAX, fileSize - 1);
 
       if (end >= fileSize) {
         end = fileSize - 1;

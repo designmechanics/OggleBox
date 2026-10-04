@@ -282,6 +282,26 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
 
       showControlsRef.current();
 
+      const performSeekLocal = (targetTime: number) => {
+        if (!videoRef.current) return;
+        const activeDuration = getActiveDuration();
+        const clampedTime = Math.max(0, Math.min(targetTime, activeDuration));
+        
+        if (useTranscode) {
+          setTranscodeStartTime(clampedTime);
+          setIsLoaded(false);
+        } else {
+          videoRef.current.currentTime = clampedTime;
+        }
+        updatePlaybackDisplay(clampedTime, activeDuration);
+        
+        if (clampedTime > 0 && activeDuration > 0) {
+          lastStorageSaveRef.current = Date.now();
+          localStorage.setItem(`motionstream_progress_${item.id}`, clampedTime.toString());
+          localStorage.setItem(`motionstream_progress_percent_${item.id}`, ((clampedTime / activeDuration) * 100).toString());
+        }
+      };
+
       if (e.code === 'Space' || e.code === 'KeyK') {
         e.preventDefault();
         togglePlay();
@@ -289,14 +309,15 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       } else if (e.code === 'ArrowLeft' || e.code === 'KeyJ') {
         e.preventDefault();
         if (videoRef.current) {
-          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);
+          const currentTime = useTranscode ? transcodeStartTime + videoRef.current.currentTime : videoRef.current.currentTime;
+          performSeekLocal(currentTime - 5);
           showToast('-5s');
         }
       } else if (e.code === 'ArrowRight' || e.code === 'KeyL') {
         e.preventDefault();
         if (videoRef.current) {
-          const maxDur = getActiveDuration() || videoRef.current.duration;
-          videoRef.current.currentTime = Math.min(maxDur, videoRef.current.currentTime + 5);
+          const currentTime = useTranscode ? transcodeStartTime + videoRef.current.currentTime : videoRef.current.currentTime;
+          performSeekLocal(currentTime + 5);
           showToast('+5s');
         }
       } else if (e.code === 'ArrowUp') {
@@ -346,7 +367,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       window.removeEventListener('keydown', handleKeyDown);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
-  }, [isPlaying, volume, isMuted]);
+  }, [isPlaying, volume, isMuted, useTranscode, transcodeStartTime]);
 
   const formatTime = (timeInSeconds: number) => {
     if (isNaN(timeInSeconds)) return "00:00";
@@ -518,9 +539,30 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     });
   };
   
-    const skipTime = (amount: number) => {
+  const performSeek = (targetTime: number) => {
+    if (!videoRef.current) return;
+    const activeDuration = getActiveDuration();
+    const clampedTime = Math.max(0, Math.min(targetTime, activeDuration));
+    
+    if (useTranscode) {
+      setTranscodeStartTime(clampedTime);
+      setIsLoaded(false);
+    } else {
+      videoRef.current.currentTime = clampedTime;
+    }
+    updatePlaybackDisplay(clampedTime, activeDuration);
+    
+    if (clampedTime > 0 && activeDuration > 0) {
+      lastStorageSaveRef.current = Date.now();
+      localStorage.setItem(`motionstream_progress_${item.id}`, clampedTime.toString());
+      localStorage.setItem(`motionstream_progress_percent_${item.id}`, ((clampedTime / activeDuration) * 100).toString());
+    }
+  };
+
+  const skipTime = (amount: number) => {
     if (videoRef.current) {
-      videoRef.current.currentTime += amount;
+      const currentTime = useTranscode ? transcodeStartTime + videoRef.current.currentTime : videoRef.current.currentTime;
+      performSeek(currentTime + amount);
     }
   };
 
@@ -562,8 +604,16 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     }
   };
 
+  const lastBufferUpdateRef = useRef(0);
+
   const updateBufferDisplay = (activeDuration: number) => {
     if (!videoRef.current || !bufferBarRef.current || activeDuration <= 0) return;
+    
+    // Throttle buffer updates to prevent layout thrashing on fast incoming TCP chunks
+    const now = Date.now();
+    if (now - lastBufferUpdateRef.current < 200) return; // Max 5fps for buffer bar
+    lastBufferUpdateRef.current = now;
+    
     const vid = videoRef.current;
     const buffered = vid.buffered;
     if (!buffered || buffered.length === 0) {
@@ -719,20 +769,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       const percentage = parseFloat(e.target.value);
       const activeDuration = getActiveDuration();
       const time = (percentage / 100) * activeDuration;
-      
-      if (useTranscode) {
-        // For transcoded streams, we must trigger a reload with new start time
-        setTranscodeStartTime(time);
-        setIsLoaded(false);
-      } else {
-        videoRef.current.currentTime = time;
-      }
-      updatePlaybackDisplay(time, activeDuration);
-      if (time > 0 && activeDuration > 0) {
-        lastStorageSaveRef.current = Date.now();
-        localStorage.setItem(`motionstream_progress_${item.id}`, time.toString());
-        localStorage.setItem(`motionstream_progress_percent_${item.id}`, percentage.toString());
-      }
+      performSeek(time);
     }
   };
 
@@ -1078,7 +1115,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
               {/* Blue Stream Buffer Fill */}
               <div 
                 ref={bufferBarRef}
-                className="absolute top-0 bottom-0 bg-blue-500 rounded-full transition-all duration-150 pointer-events-none"
+                className="absolute top-0 bottom-0 bg-blue-500 rounded-full pointer-events-none"
                 style={{ left: '0%', width: '0%', backgroundColor: 'rgba(59, 130, 246, 0.75)', zIndex: 1 }}
                 title="Stream Buffer"
               />

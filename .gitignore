@@ -26,3 +26,7 @@ downloads/
 
 # Build/Patch Scripts
 *.cjs
+
+# Documentation folders
+md/
+mdplans/

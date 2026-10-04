@@ -168,7 +168,7 @@ export default function SettingsModal({
                   SYSTEM CONTROL
                 </span>
                 <span className={`text-xs font-mono ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-                  v1.2.0
+                  v1.2.1
                 </span>
               </div>
               <h2 className="text-lg font-bold tracking-tight mt-0.5">Preferences & Settings</h2>

@@ -18,6 +18,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
+  const topBarRef = useRef<HTMLDivElement>(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -422,7 +423,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   }, { scope: containerRef });
 
   useGSAP(() => {
-    if (!isPlaying && isLoaded) {
+    if (!isPlaying && isLoaded && showControls) {
       gsap.fromTo('.gsap-pause-overlay', 
         { opacity: 0, scale: 0.9, y: 20 },
         { opacity: 1, scale: 1, y: 0, duration: 0.6, ease: 'back.out(1.5)', overwrite: 'auto' }
@@ -430,7 +431,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     } else {
       gsap.to('.gsap-pause-overlay', { opacity: 0, scale: 0.95, y: -20, duration: 0.3, ease: 'power2.in', overwrite: 'auto' });
     }
-  }, { dependencies: [isPlaying, isLoaded], scope: containerRef });
+  }, { dependencies: [isPlaying, isLoaded, showControls], scope: containerRef });
 
   const saveCurrentProgress = (force: boolean = false) => {
     if (!videoRef.current) return;
@@ -778,6 +779,15 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           overwrite: 'auto'
         });
       }
+      if (topBarRef.current) {
+        gsap.to(topBarRef.current, { 
+          opacity: 0, 
+          y: -24, 
+          duration: 0.5, 
+          ease: 'power2.inOut',
+          overwrite: 'auto'
+        });
+      }
     }, 3000);
   };
 
@@ -787,6 +797,15 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       setShowControls(true);
       if (controlsRef.current) {
         gsap.to(controlsRef.current, { 
+          opacity: 1, 
+          y: 0, 
+          duration: 0.3, 
+          ease: 'power2.out',
+          overwrite: 'auto'
+        });
+      }
+      if (topBarRef.current) {
+        gsap.to(topBarRef.current, { 
           opacity: 1, 
           y: 0, 
           duration: 0.3, 
@@ -867,9 +886,9 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     >
       {/* Top Bar */}
       <div 
-        className={`gsap-player-ui absolute top-0 inset-x-0 p-6 z-10 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between transition-all duration-300 ${
-          showControls ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-4 pointer-events-none'
-        }`}
+        ref={topBarRef}
+        className="gsap-player-ui absolute top-0 inset-x-0 p-6 z-10 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between"
+        style={{ pointerEvents: showControls ? 'auto' : 'none' }}
       >
         <button 
           onClick={handleClose}

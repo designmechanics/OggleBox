@@ -35,6 +35,8 @@ function formatETA(ms: number): string {
 export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: WebTorrentViewProps) {
   const [torrents, setTorrents] = useState<TorrentItem[]>([]);
   const [filterTab, setFilterTab] = useState<'all' | 'downloading' | 'seeding' | 'paused' | 'stopped'>('all');
+  const [isEngineRunning, setIsEngineRunning] = useState<boolean>(true);
+  const [isStartingEngine, setIsStartingEngine] = useState<boolean>(false);
   
   const [magnetInput, setMagnetInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,6 +60,16 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
   // Fetch live torrent list from backend daemon
   const fetchTorrents = async () => {
     try {
+      const statusRes = await fetch('/api/torrent-engine/status');
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        setIsEngineRunning(statusData.running);
+        if (!statusData.running) {
+          setTorrents([]);
+          return;
+        }
+      }
+
       const res = await fetch('/api/torrents');
       if (res.ok) {
         const data = await res.json();
@@ -75,6 +87,32 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
     const interval = setInterval(fetchTorrents, 1500);
     return () => clearInterval(interval);
   }, []);
+
+  const handleStartEngine = async () => {
+    setIsStartingEngine(true);
+    try {
+      const res = await fetch('/api/torrent-engine/start', { method: 'POST' });
+      if (res.ok) {
+        setIsEngineRunning(true);
+        fetchTorrents();
+      } else {
+        showNotification("Failed to start engine", true);
+      }
+    } catch (err) {
+      showNotification("Error starting engine", true);
+    }
+    setIsStartingEngine(false);
+  };
+
+  const handleStopEngine = async () => {
+    if (!window.confirm("Are you sure you want to shut down the BitTorrent engine? This will pause all active downloads and clear them from memory until restarted.")) return;
+    try {
+      const res = await fetch('/api/torrent-engine/stop', { method: 'POST' });
+      if (res.ok) setIsEngineRunning(false);
+    } catch (err) {
+      showNotification("Error stopping engine", true);
+    }
+  };
 
   const showNotification = (msg: string, isError = false) => {
     if (isError) {
@@ -264,6 +302,29 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
     return true;
   });
 
+  if (!isEngineRunning) {
+    return (
+      <div className={`wt-container custom-scrollbar ${isLight ? 'light' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <div style={{ textAlign: 'center', padding: '3rem', maxWidth: '600px', backgroundColor: isLight ? '#ffffff' : '#0f172a', borderRadius: '16px', border: `1px solid ${isLight ? '#e2e8f0' : '#1e293b'}` }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '80px', height: '80px', borderRadius: '50%', backgroundColor: isLight ? '#f1f5f9' : '#1e293b', marginBottom: '1.5rem' }}>
+            <Server style={{ width: '40px', height: '40px', color: '#94a3b8' }} />
+          </div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: isLight ? '#0f172a' : '#f8fafc', marginBottom: '1rem' }}>BitTorrent Engine is Offline</h2>
+          <p style={{ color: isLight ? '#64748b' : '#94a3b8', marginBottom: '2rem', lineHeight: 1.6 }}>
+            The WebTorrent background engine consumes CPU and memory to maintain peer connections and DHT routing. To optimize system resources, it remains offline until you need it.
+          </p>
+          <button
+            onClick={handleStartEngine}
+            disabled={isStartingEngine}
+            style={{ padding: '0.75rem 2rem', fontSize: '1rem', fontWeight: 700, backgroundColor: '#22d3ee', color: '#000', border: 'none', borderRadius: '8px', cursor: isStartingEngine ? 'not-allowed' : 'pointer', opacity: isStartingEngine ? 0.7 : 1 }}
+          >
+            {isStartingEngine ? 'Starting Engine...' : 'Start BitTorrent Engine'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`wt-container custom-scrollbar ${isLight ? 'light' : ''}`}>
       {/* Top Banner: Daemon Telemetry & Torrent Input */}
@@ -275,6 +336,10 @@ export default function WebTorrentView({ theme, primaryColor, onPlayMedia }: Web
                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
                 Backend Node.js Daemon Active
               </span>
+              <button onClick={handleStopEngine} className="wt-pill-badge" style={{ cursor: 'pointer', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                <Square style={{ width: '10px', height: '10px', marginRight: '4px' }} />
+                Shutdown Engine
+              </button>
               <span className="wt-pill-badge wt-badge-slate">
                 TCP / UDP / DHT Swarm Enabled
               </span>

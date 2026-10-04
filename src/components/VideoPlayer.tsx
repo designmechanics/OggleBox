@@ -87,7 +87,9 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       const ctx = canvas.getContext('2d');
       
       const draw = () => {
-        animationFrameId = requestAnimationFrame(draw);
+        if (isPlaying) {
+          animationFrameId = requestAnimationFrame(draw);
+        }
         if (analyserRef.current && ctx) {
           const bufferLength = analyserRef.current.frequencyBinCount;
           const dataArray = new Uint8Array(bufferLength);
@@ -106,6 +108,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           }
         }
       };
+      
+      // Run once immediately to draw current state, then loop only if playing
       draw();
     } else {
       if (canvasRef.current) {
@@ -116,7 +120,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     return () => {
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
     };
-  }, [showVisualiser]);
+  }, [showVisualiser, isPlaying]);
 
   const [showStats, setShowStats] = useState(false);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);

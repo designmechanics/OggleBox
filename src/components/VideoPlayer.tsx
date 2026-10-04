@@ -128,10 +128,23 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showTheaterMode, setShowTheaterMode] = useState(false);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const [thumbTime, setThumbTime] = useState<number | null>(null);
   const [hoverPos, setHoverPos] = useState<number>(0);
   const [subtitles, setSubtitles] = useState<any[]>([]);
   const [activeSubTrack, setActiveSubTrack] = useState<number | null>(null);
   const [showSubMenu, setShowSubMenu] = useState(false);
+  
+  useEffect(() => {
+    if (hoverTime === null) {
+      setThumbTime(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      // Round down to nearest 10s to match backend bucket for cache hits
+      setThumbTime(Math.floor(hoverTime / 10) * 10);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [hoverTime]);
   // Playback position (currentTime/progress) is intentionally NOT React state — it changes
   // ~4x/sec via `timeupdate` and putting it in state re-renders this whole component on every
   // tick. These refs are the only source of truth for "where are we in the video"; write them
@@ -1155,15 +1168,19 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
               >
                 <div className="w-32 sm:w-48 aspect-video bg-black/90 border border-white/20 rounded-md overflow-hidden shadow-2xl flex items-center justify-center relative">
                   {item.mediaType === 'video' ? (
-                    <img 
-                      src={`/api/thumb/${(() => {
-                        let cleanPath = item.path || item.url || '';
-                        cleanPath = cleanPath.replace(/^\/api\/stream\//, '').replace(/^\/api\/transcode\//, '').replace(/^transcode\//, '').replace(/^\/+/, '');
-                        return cleanPath.split('/').map(encodeURIComponent).join('/');
-                      })()}?time=${hoverTime}`}
-                      className="absolute inset-0 w-full h-full object-cover"
-                      alt="preview"
-                    />
+                    thumbTime !== null ? (
+                      <img 
+                        src={`/api/thumb/${(() => {
+                          let cleanPath = item.path || item.url || '';
+                          cleanPath = cleanPath.replace(/^\/api\/stream\//, '').replace(/^\/api\/transcode\//, '').replace(/^transcode\//, '').replace(/^\/+/, '');
+                          return cleanPath.split('/').map(encodeURIComponent).join('/');
+                        })()}?time=${thumbTime}`}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        alt="preview"
+                      />
+                    ) : (
+                      <Loader2 className="w-6 h-6 text-cyan-400/50 animate-spin" />
+                    )
                   ) : (
                     <Music className="w-6 h-6 text-white/20" />
                   )}

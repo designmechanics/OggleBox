@@ -186,19 +186,20 @@ function formatTorrentModel(t: any): TorrentItem {
   };
 }
 
-export async function initTorrentManager(
-  mediaDir: string,
-  onComplete?: (files: string[]) => void
-) {
-  mediaDirectory = path.resolve(mediaDir);
-  torrentsDirectory = path.join(mediaDirectory, 'Torrents');
-  onCompleteCallback = onComplete || null;
+export let isEngineRunning = false;
 
-  if (!fs.existsSync(torrentsDirectory)) {
-    fs.mkdirSync(torrentsDirectory, { recursive: true });
-    logTorrent('Init', `Created Torrents download folder at: ${torrentsDirectory}`);
+export async function stopEngine() {
+  if (client) {
+    client.destroy();
+    client = null;
   }
+  isEngineRunning = false;
+  logTorrent('Stop', 'WebTorrent engine shut down completely.');
+}
 
+export async function startEngine() {
+  if (isEngineRunning) return;
+  
   try {
     logTorrent('Init', 'Loading WebTorrent Node engine via dynamic ESM import...');
     const WebTorrentModule = await (new Function('m', 'return import(m)'))('webtorrent');
@@ -209,7 +210,8 @@ export async function initTorrentManager(
       dht: true,
       tracker: true
     });
-
+    
+    isEngineRunning = true;
     logTorrent('Init', 'WebTorrent Node client active with DHT and TCP/UDP swarm enabled.');
 
     client.on('error', (err: any) => {
@@ -234,6 +236,23 @@ export async function initTorrentManager(
   } catch (err: any) {
     logTorrent('InitFatal', `Failed to initialize WebTorrent Node client: ${err.message}`);
   }
+}
+
+export async function initTorrentManager(
+  mediaDir: string,
+  onComplete?: (files: string[]) => void
+) {
+  mediaDirectory = path.resolve(mediaDir);
+  torrentsDirectory = path.join(mediaDirectory, 'Torrents');
+  onCompleteCallback = onComplete || null;
+
+  if (!fs.existsSync(torrentsDirectory)) {
+    fs.mkdirSync(torrentsDirectory, { recursive: true });
+    logTorrent('Init', `Created Torrents download folder at: ${torrentsDirectory}`);
+  }
+  
+  // We no longer auto-start the engine here to save CPU.
+  // The frontend will call /api/torrent-engine/start when the user explicitly requests it.
 }
 
 function attachTorrentListeners(torrent: any) {

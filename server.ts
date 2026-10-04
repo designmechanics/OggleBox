@@ -11,6 +11,9 @@ import ffmpegStatic from "ffmpeg-static";
 import ffprobeInstaller from "@ffprobe-installer/ffprobe";
 import {
   initTorrentManager,
+  startEngine,
+  stopEngine,
+  isEngineRunning,
   getAllTorrents,
   getTorrentById,
   addTorrent,
@@ -727,6 +730,28 @@ async function startServer() {
     }
   });
 
+  app.get("/api/torrent-engine/status", (req, res) => {
+    res.json({ running: isEngineRunning });
+  });
+
+  app.post("/api/torrent-engine/start", async (req, res) => {
+    try {
+      await startEngine();
+      res.json({ running: isEngineRunning });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/torrent-engine/stop", async (req, res) => {
+    try {
+      await stopEngine();
+      res.json({ running: isEngineRunning });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/transcode/*", (req, res) => {
     let rawPath = req.params[0] || req.url.replace(/^\/api\/transcode\//, "").split('?')[0];
     logStep("Transcode", "Step 1/5", `Transcode request received for raw path: "${rawPath}"`);
@@ -754,7 +779,7 @@ async function startServer() {
       '-pix_fmt yuv420p',
       '-ac 2',
       '-movflags frag_keyframe+empty_moov+default_base_moof',
-      '-threads 0'
+      '-threads 2'
     ];
 
     if (targetCodec === 'libx265') {

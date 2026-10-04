@@ -4,6 +4,7 @@ import fs from "fs";
 import https from "https";
 import http from "http";
 import os from "os";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
@@ -875,6 +876,7 @@ async function startServer() {
       const stat = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
       const videoStream: any = metadata.streams?.find((s: any) => s.codec_type === 'video') || {};
       const audioStream: any = metadata.streams?.find((s: any) => s.codec_type === 'audio') || {};
+      const subtitleStreams: any[] = metadata.streams?.filter((s: any) => s.codec_type === 'subtitle') || [];
       res.json({
         duration: metadata.format.duration || 0,
         format: metadata.format.format_name,
@@ -905,9 +907,81 @@ async function startServer() {
           sampleRate: audioStream.sample_rate,
           bitrate: audioStream.bit_rate
         },
+        subtitles: subtitleStreams.map((s, idx) => ({
+          index: s.index,
+          codec: s.codec_name,
+          language: s.tags?.language || 'Unknown',
+          title: s.tags?.title || `Track ${idx + 1}`
+        })),
         tags: metadata.format.tags || {}
       });
     });
+  });
+
+  const thumbCacheDir = path.join(process.cwd(), ".thumbnails");
+  if (!fs.existsSync(thumbCacheDir)) fs.mkdirSync(thumbCacheDir);
+
+  app.get("/api/thumb/*", (req, res) => {
+    let rawPath = req.params[0] || req.url.replace(/^\/api\/thumb\//, "").split('?')[0];
+    const { filePath } = resolveVideoFilePath(rawPath);
+    if (!filePath) {
+      return res.status(404).send("File not found");
+    }
+
+    // round time to nearest 10 seconds to increase cache hit rate and reduce spam
+    const requestedTime = parseFloat(req.query.time as string) || 0;
+    const time = Math.floor(requestedTime / 10) * 10;
+    
+    const hash = crypto.createHash("md5").update(`${filePath}_${time}`).digest("hex");
+    const cachePath = path.join(thumbCacheDir, `${hash}.jpg`);
+
+    if (fs.existsSync(cachePath)) {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+      return fs.createReadStream(cachePath).pipe(res);
+    }
+
+    const command = ffmpeg(filePath)
+      .seekInput(time)
+      .frames(1)
+      .format('image2')
+      .videoCodec('mjpeg')
+      .size('320x?')
+      .on('error', (err) => {
+        if (!res.headersSent) res.status(500).end();
+      });
+
+    command.save(cachePath).on('end', () => {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+      if (fs.existsSync(cachePath)) {
+        fs.createReadStream(cachePath).pipe(res);
+      } else {
+        res.status(500).end();
+      }
+    });
+  });
+
+  app.get("/api/subtitle/*", (req, res) => {
+    let rawPath = req.params[0] || req.url.replace(/^\/api\/subtitle\//, "").split('?')[0];
+    const { filePath } = resolveVideoFilePath(rawPath);
+    if (!filePath) {
+      return res.status(404).send("File not found");
+    }
+    
+    const streamIndex = parseInt(req.query.stream as string) || 0;
+    
+    res.setHeader("Content-Type", "text/vtt");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    
+    ffmpeg(filePath)
+      .outputOptions([`-map 0:${streamIndex}`])
+      .format("webvtt")
+      .on('error', (err) => {
+        console.error("Subtitle extraction error:", err.message);
+        if (!res.headersSent) res.status(500).end();
+      })
+      .pipe(res, { end: true });
   });
 
   app.get("/api/stream/*", (req, res) => {

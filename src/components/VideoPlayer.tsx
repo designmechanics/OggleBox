@@ -125,6 +125,9 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const [showTheaterMode, setShowTheaterMode] = useState(false);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverPos, setHoverPos] = useState<number>(0);
+  const [subtitles, setSubtitles] = useState<any[]>([]);
+  const [activeSubTrack, setActiveSubTrack] = useState<number | null>(null);
+  const [showSubMenu, setShowSubMenu] = useState(false);
   // Playback position (currentTime/progress) is intentionally NOT React state — it changes
   // ~4x/sec via `timeupdate` and putting it in state re-renders this whole component on every
   // tick. These refs are the only source of truth for "where are we in the video"; write them
@@ -183,6 +186,12 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         }
         const videoCodec = meta?.video?.codec?.toLowerCase();
         const audioCodec = meta?.audio?.codec?.toLowerCase();
+        
+        if (meta?.subtitles && Array.isArray(meta.subtitles)) {
+          setSubtitles(meta.subtitles);
+        } else {
+          setSubtitles([]);
+        }
 
         let needsTranscode = false;
         let reason = '';
@@ -1022,7 +1031,21 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           }}
 
           autoPlay
-        />
+        >
+          {activeSubTrack !== null && (
+            <track 
+              src={`/api/subtitle/${(() => {
+                let cleanPath = item.path || item.url || '';
+                cleanPath = cleanPath.replace(/^\/api\/stream\//, '').replace(/^\/api\/transcode\//, '').replace(/^transcode\//, '').replace(/^\/+/, '');
+                return cleanPath.split('/').map(encodeURIComponent).join('/');
+              })()}?stream=${activeSubTrack}`}
+              kind="subtitles"
+              srcLang="en"
+              label="Subtitle"
+              default
+            />
+          )}
+        </video>
         )}
 
 
@@ -1109,7 +1132,44 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           className={`absolute bottom-full mb-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none transition-opacity duration-500 ${showVisualiser ? 'opacity-100' : 'opacity-0'}`} 
         />
           {/* Progress Bar Container */}
-          <div className="group relative py-2 cursor-pointer flex items-center">
+          <div 
+            className="group relative py-2 cursor-pointer flex items-center"
+            onMouseMove={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+              setHoverPos(pos);
+              setHoverTime(pos * getActiveDuration());
+              setShowProgressHover(true);
+            }}
+            onMouseLeave={() => setShowProgressHover(false)}
+          >
+            {/* Hover Thumbnail & Time */}
+            {showProgressHover && hoverTime !== null && (
+              <div 
+                className="absolute bottom-full mb-3 -translate-x-1/2 pointer-events-none flex flex-col items-center gap-1 z-50"
+                style={{ left: `${hoverPos * 100}%` }}
+              >
+                <div className="w-32 sm:w-48 aspect-video bg-black/90 border border-white/20 rounded-md overflow-hidden shadow-2xl flex items-center justify-center relative">
+                  {item.mediaType === 'video' ? (
+                    <img 
+                      src={`/api/thumb/${(() => {
+                        let cleanPath = item.path || item.url || '';
+                        cleanPath = cleanPath.replace(/^\/api\/stream\//, '').replace(/^\/api\/transcode\//, '').replace(/^transcode\//, '').replace(/^\/+/, '');
+                        return cleanPath.split('/').map(encodeURIComponent).join('/');
+                      })()}?time=${hoverTime}`}
+                      className="absolute inset-0 w-full h-full object-cover"
+                      alt="preview"
+                    />
+                  ) : (
+                    <Music className="w-6 h-6 text-white/20" />
+                  )}
+                </div>
+                <div className="px-2 py-0.5 bg-black/80 backdrop-blur-md rounded text-[10px] font-mono text-white border border-white/10 shadow-lg whitespace-nowrap">
+                  {formatTime(hoverTime)}
+                </div>
+              </div>
+            )}
+            
             {/* Background Track */}
             <div className="w-full h-2 bg-white/15 backdrop-blur-xl border border-white/10 rounded-full relative overflow-hidden">
               {/* Blue Stream Buffer Fill */}
@@ -1315,6 +1375,38 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
               >
                 {useTranscode ? 'TRANS' : 'DIRECT'}
               </button>
+              
+              <div className="relative">
+                <button
+                  onClick={() => setShowSubMenu(!showSubMenu)}
+                  className={`flex items-center justify-center px-2 py-1 rounded text-[10px] font-bold tracking-wider uppercase transition-colors ${activeSubTrack !== null ? 'bg-cyan-500 text-black' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
+                  title="Subtitles"
+                >
+                  CC
+                </button>
+                {showSubMenu && (
+                  <div className="absolute bottom-full right-0 mb-4 bg-black/90 backdrop-blur-xl border border-white/20 rounded-xl overflow-hidden shadow-2xl flex flex-col min-w-[160px] z-50">
+                    <button 
+                      onClick={() => { setActiveSubTrack(null); setShowSubMenu(false); }}
+                      className={`text-left px-4 py-2.5 text-xs font-medium hover:bg-white/10 transition-colors ${activeSubTrack === null ? 'text-cyan-400 bg-white/5' : 'text-white'}`}
+                    >
+                      Off
+                    </button>
+                    {subtitles.map((sub, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => { setActiveSubTrack(sub.index); setShowSubMenu(false); }}
+                        className={`text-left px-4 py-2.5 text-xs font-medium hover:bg-white/10 transition-colors ${activeSubTrack === sub.index ? 'text-cyan-400 bg-white/5' : 'text-white'}`}
+                      >
+                        {sub.title || sub.language || `Track ${idx + 1}`} ({sub.codec})
+                      </button>
+                    ))}
+                    {subtitles.length === 0 && (
+                      <div className="px-4 py-3 text-xs text-white/40 italic">No subs found</div>
+                    )}
+                  </div>
+                )}
+              </div>
               
               <button 
                 onClick={() => { setShowVisualiser(p => !p); initAudio(); }}

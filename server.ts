@@ -277,8 +277,10 @@ function generateThumbnailAtTimestamp(videoPath: string, thumbnailPath: string, 
     const tempPath = `${thumbnailPath}.tmp.${Date.now()}.jpg`;
     logStep("Thumbnail", "FFmpeg", `Extracting frame for "${filename}" at ${timestamp}s...`);
 
-    ffmpeg(videoPath)
-      .seekInput(timestamp)
+    const command = ffmpeg(videoPath);
+    if (HW_ACCEL_OPT) command.inputOptions(['-hwaccel', HW_ACCEL_OPT]);
+    
+    command.seekInput(timestamp)
       .outputOptions(['-vframes 1', '-q:v 2', '-f image2', '-update 1'])
       .output(tempPath)
       .on("end", () => {
@@ -481,6 +483,7 @@ function loadLibraryCache(): any[] | null {
 
 let H264_ENCODER = "libx264";
 let HEVC_ENCODER = "libx265";
+let HW_ACCEL_OPT: string | null = null;
 
 async function detectHardwareEncoders() {
   logStep("Boot", "HWProbe", "Probing system for hardware-accelerated encoders...");
@@ -508,15 +511,19 @@ async function detectHardwareEncoders() {
       const checkEncoders = async () => {
         if (encoders['h264_nvenc'] && await testEncoder('h264_nvenc')) {
           H264_ENCODER = 'h264_nvenc';
-          logStep("Boot", "HWProbe", "NVIDIA NVENC H.264 acceleration ENABLED.");
+          HW_ACCEL_OPT = 'cuda';
+          logStep("Boot", "HWProbe", "NVIDIA NVENC H.264 + CUDA decoding ENABLED.");
         } else if (encoders['h264_qsv'] && await testEncoder('h264_qsv')) {
           H264_ENCODER = 'h264_qsv';
-          logStep("Boot", "HWProbe", "Intel QuickSync H.264 acceleration ENABLED.");
+          HW_ACCEL_OPT = 'qsv';
+          logStep("Boot", "HWProbe", "Intel QuickSync H.264 + QSV decoding ENABLED.");
         } else if (encoders['h264_videotoolbox'] && await testEncoder('h264_videotoolbox')) {
           H264_ENCODER = 'h264_videotoolbox';
+          HW_ACCEL_OPT = 'videotoolbox';
           logStep("Boot", "HWProbe", "Apple VideoToolbox H.264 acceleration ENABLED.");
         } else if (encoders['h264_amf'] && await testEncoder('h264_amf')) {
           H264_ENCODER = 'h264_amf';
+          HW_ACCEL_OPT = 'd3d11va'; // standard DXVA for AMF
           logStep("Boot", "HWProbe", "AMD AMF H.264 acceleration ENABLED.");
         }
 
@@ -871,8 +878,10 @@ async function startServer() {
         break;
     }
 
-    const command = ffmpeg(filePath)
-      .seekInput(startTime)
+    const command = ffmpeg(filePath);
+    if (HW_ACCEL_OPT) command.inputOptions(['-hwaccel', HW_ACCEL_OPT]);
+    
+    command.seekInput(startTime)
       .videoCodec(targetCodec)
       .audioCodec('aac')
       .format('mp4')
@@ -1037,8 +1046,10 @@ async function startServer() {
       }
     });
 
-    command = ffmpeg(filePath)
-      .seekInput(time)
+    command = ffmpeg(filePath);
+    if (HW_ACCEL_OPT) command.inputOptions(['-hwaccel', HW_ACCEL_OPT]);
+    
+    command.seekInput(time)
       .frames(1)
       .format('image2')
       .videoCodec('mjpeg')
@@ -1341,8 +1352,10 @@ async function startServer() {
       ? filePath
       : torrentFile.createReadStream();
 
-    const command = ffmpeg(inputSource)
-      .seekInput(startTime)
+    const command = ffmpeg(inputSource);
+    if (HW_ACCEL_OPT) command.inputOptions(['-hwaccel', HW_ACCEL_OPT]);
+    
+    command.seekInput(startTime)
       .videoCodec(targetCodec)
       .audioCodec("aac")
       .format("mp4")

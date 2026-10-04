@@ -26,6 +26,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const [isLoaded, setIsLoaded] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+  const isControlsVisibleRef = useRef(true);
+  const showControlsRef = useRef<() => void>(() => {});
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [useTranscode, setUseTranscode] = useState(false);
@@ -129,10 +131,13 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   // useState — that was tried before and caused stutter, and the dangling reads left behind
   // when it was removed became ReferenceErrors.
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const bufferBarRef = useRef<HTMLDivElement>(null);
   const progressDotRef = useRef<HTMLDivElement>(null);
   const currentTimeRef = useRef<HTMLSpanElement>(null);
+  const totalTimeRef = useRef<HTMLSpanElement>(null);
   const remainingTimeRef = useRef<HTMLSpanElement>(null);
   const progressInputRef = useRef<HTMLInputElement>(null);
+  const totalDurationRef = useRef<number>((item as any)?.duration || 0);
   const [showProgressHover, setShowProgressHover] = useState(false);
     const [loopMode, setLoopMode] = useState<'off' | 'single' | 'all'>('off');
   const [loopAB, setLoopAB] = useState<{a: number | null, b: number | null}>({a: null, b: null});
@@ -152,6 +157,9 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     lastStorageSaveRef.current = Date.now();
     setCapabilityChecked(false);
     setTranscodeStartTime(0);
+    const initialDur = (item as any)?.duration || 0;
+    totalDurationRef.current = initialDur;
+    setDuration(initialDur);
     if (item.mediaType === 'audio') {
       setShowVisualiser(true);
     }
@@ -164,6 +172,14 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       .then(r => r.json())
       .then(meta => {
         if (cancelled) return;
+        const probedDur = Number(meta?.duration || 0);
+        if (probedDur > 0) {
+          totalDurationRef.current = probedDur;
+          setDuration(probedDur);
+          if (totalTimeRef.current) {
+            totalTimeRef.current.innerText = formatTime(probedDur);
+          }
+        }
         const videoCodec = meta?.video?.codec?.toLowerCase();
         const audioCodec = meta?.audio?.codec?.toLowerCase();
 
@@ -188,16 +204,25 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           reason = `${audioCodec.toUpperCase()} audio unsupported`;
         }
 
+        let resumeOffset = 0;
         if (needsTranscode) {
           setUseTranscode(true);
           const resumeTime = getSavedResumeTime(item.id, meta?.duration || 0);
-          if (resumeTime !== null) setTranscodeStartTime(resumeTime);
+          if (resumeTime !== null) {
+            resumeOffset = resumeTime;
+            setTranscodeStartTime(resumeTime);
+          }
           showToast(`${reason}: Auto-Transcoding to H.264/AAC`);
         } else {
           setUseTranscode(false);
           if (videoCodec === 'hevc' || videoCodec === 'h265') {
             showToast('Native HEVC Supported: Direct Play');
           }
+        }
+
+        if (videoRef.current && probedDur > 0) {
+          const curTime = needsTranscode ? resumeOffset : videoRef.current.currentTime;
+          updatePlaybackDisplay(curTime, probedDur);
         }
       })
       .catch(() => {
@@ -254,6 +279,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       // Don't trigger shortcuts if target is an input
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
 
+      showControlsRef.current();
+
       if (e.code === 'Space' || e.code === 'KeyK') {
         e.preventDefault();
         togglePlay();
@@ -267,7 +294,8 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       } else if (e.code === 'ArrowRight' || e.code === 'KeyL') {
         e.preventDefault();
         if (videoRef.current) {
-          videoRef.current.currentTime = Math.min(videoRef.current.duration, videoRef.current.currentTime + 5);
+          const maxDur = getActiveDuration() || videoRef.current.duration;
+          videoRef.current.currentTime = Math.min(maxDur, videoRef.current.currentTime + 5);
           showToast('+5s');
         }
       } else if (e.code === 'ArrowUp') {
@@ -329,6 +357,14 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const getActiveDuration = (): number => {
+    if (totalDurationRef.current > 0) return totalDurationRef.current;
+    if (videoRef.current && videoRef.current.duration > 0 && videoRef.current.duration !== Infinity && !isNaN(videoRef.current.duration)) {
+      return videoRef.current.duration;
+    }
+    return duration > 0 ? duration : 0;
   };
 
   // Single source of truth for "where should this item resume from" — used for both direct
@@ -402,16 +438,11 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     if (vid.seeking && !force) return;
 
     let time = vid.currentTime;
-    let currentDuration = vid.duration;
-
     if (useTranscode) {
       time += transcodeStartTime;
-      if (currentDuration === Infinity || isNaN(currentDuration)) {
-        currentDuration = duration;
-      }
     }
 
-    const activeDuration = currentDuration > 0 && currentDuration !== Infinity ? currentDuration : duration;
+    const activeDuration = getActiveDuration();
     if (time <= 0 || activeDuration <= 0) return;
 
     const now = Date.now();
@@ -530,11 +561,69 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     }
   };
 
+  const updateBufferDisplay = (activeDuration: number) => {
+    if (!videoRef.current || !bufferBarRef.current || activeDuration <= 0) return;
+    const vid = videoRef.current;
+    const buffered = vid.buffered;
+    if (!buffered || buffered.length === 0) {
+      bufferBarRef.current.style.width = '0%';
+      return;
+    }
+
+    const currentLocalTime = vid.currentTime;
+    let bufStart = 0;
+    let bufEnd = 0;
+
+    // Look for the buffer range containing current time, or immediately ahead
+    for (let i = 0; i < buffered.length; i++) {
+      const s = buffered.start(i);
+      const e = buffered.end(i);
+      if (s <= currentLocalTime && currentLocalTime <= e) {
+        bufStart = s;
+        bufEnd = e;
+        break;
+      }
+    }
+
+    // Fallback: If currentLocalTime is slightly outside ranges, pick the range closest ahead or the largest end
+    if (bufEnd === 0) {
+      for (let i = 0; i < buffered.length; i++) {
+        const e = buffered.end(i);
+        if (e > bufEnd) {
+          bufStart = buffered.start(i);
+          bufEnd = e;
+        }
+      }
+    }
+
+    // Account for transcode offset if active
+    const movieBufStart = useTranscode ? transcodeStartTime + bufStart : bufStart;
+    const movieBufEnd = useTranscode ? transcodeStartTime + bufEnd : bufEnd;
+
+    // Buffer percentage relative to total video duration
+    const startPct = Math.max(0, Math.min(100, (movieBufStart / activeDuration) * 100));
+    const endPct = Math.max(0, Math.min(100, (movieBufEnd / activeDuration) * 100));
+    const widthPct = Math.max(0, endPct - startPct);
+
+    // If starting near 0, anchor to 0% so there's no sub-pixel gap at the start
+    const leftPct = startPct < 0.5 ? 0 : startPct;
+    bufferBarRef.current.style.left = `${leftPct}%`;
+    bufferBarRef.current.style.width = `${startPct < 0.5 ? endPct : widthPct}%`;
+
+    // Also update stats for nerds if open
+    if (showStats) {
+      const currentAbsoluteTime = useTranscode ? transcodeStartTime + currentLocalTime : currentLocalTime;
+      const remainingBufferSec = Math.round(Math.max(0, movieBufEnd - currentAbsoluteTime));
+      setStats(prev => (prev.buffer === remainingBufferSec ? prev : { ...prev, buffer: remainingBufferSec }));
+    }
+  };
+
   // Single place that writes playback position into the DOM. If you need position
   // somewhere new (a HUD element, a export, whatever), read the refs or extend this
   // function — do not add a currentTime/progress useState (see the comment on the refs above).
   const updatePlaybackDisplay = (time: number, activeDuration: number) => {
     if (currentTimeRef.current) currentTimeRef.current.innerText = formatTime(time);
+    if (totalTimeRef.current) totalTimeRef.current.innerText = formatTime(activeDuration);
     if (remainingTimeRef.current) {
       remainingTimeRef.current.innerText = activeDuration > time ? `-${formatTime(activeDuration - time)}` : '00:00';
     }
@@ -542,7 +631,13 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     if (progressBarRef.current) progressBarRef.current.style.width = `${p || 0}%`;
     if (progressDotRef.current) progressDotRef.current.style.left = `${p || 0}%`;
     if (progressInputRef.current) progressInputRef.current.value = String(p || 0);
+    updateBufferDisplay(activeDuration);
     return p;
+  };
+
+  const handleProgress = () => {
+    const activeDuration = getActiveDuration();
+    updateBufferDisplay(activeDuration);
   };
 
   const handleTimeUpdate = () => {
@@ -551,22 +646,17 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       if (videoRef.current.seeking) return;
 
       let time = videoRef.current.currentTime;
-      let currentDuration = videoRef.current.duration;
-
       if (useTranscode) {
         time += transcodeStartTime;
-        // In transcode mode, duration might be Infinity due to streaming
-        // We fallback to the previously known duration or don't update if Infinity
-        if (currentDuration === Infinity || isNaN(currentDuration)) {
-            currentDuration = duration;
-        }
       }
 
-      if (currentDuration > 0 && currentDuration !== Infinity) {
-        setDuration(currentDuration);
+      const vidDur = videoRef.current.duration;
+      // If we don't have a probed duration yet, fallback to video duration if valid
+      if (totalDurationRef.current <= 0 && vidDur > 0 && vidDur !== Infinity && !isNaN(vidDur)) {
+        setDuration(vidDur);
       }
 
-      const activeDuration = currentDuration > 0 && currentDuration !== Infinity ? currentDuration : duration;
+      const activeDuration = getActiveDuration();
       const p = updatePlaybackDisplay(time, activeDuration);
 
       // Enforce A-B loop if set
@@ -590,18 +680,21 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     setIsLoaded(true);
     if (videoRef.current) {
       const dur = videoRef.current.duration;
-      if (dur > 0 && dur !== Infinity) {
+      if (totalDurationRef.current <= 0 && dur > 0 && dur !== Infinity && !isNaN(dur)) {
         setDuration(dur);
       }
-      applyDirectResume(dur);
+      const activeDuration = getActiveDuration();
+      applyDirectResume(activeDuration);
+      updateBufferDisplay(activeDuration);
     }
   };
 
   const handleCanPlay = () => {
     setIsLoaded(true);
     if (videoRef.current) {
-      const dur = videoRef.current.duration;
-      applyDirectResume(dur);
+      const activeDuration = getActiveDuration();
+      applyDirectResume(activeDuration);
+      updateBufferDisplay(activeDuration);
     }
   };
 
@@ -609,10 +702,12 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     setIsLoaded(true);
     if (videoRef.current) {
       const dur = videoRef.current.duration;
-      if (dur > 0 && dur !== Infinity) {
+      if (totalDurationRef.current <= 0 && dur > 0 && dur !== Infinity && !isNaN(dur)) {
         setDuration(dur);
       }
-      applyDirectResume(dur);
+      const activeDuration = getActiveDuration();
+      applyDirectResume(activeDuration);
+      updateBufferDisplay(activeDuration);
       
       videoRef.current.play().then(() => { setIsPlaying(true); }).catch(() => setIsPlaying(false));
     }
@@ -621,7 +716,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (videoRef.current) {
       const percentage = parseFloat(e.target.value);
-      const activeDuration = duration || videoRef.current.duration;
+      const activeDuration = getActiveDuration();
       const time = (percentage / 100) * activeDuration;
       
       if (useTranscode) {
@@ -661,21 +756,90 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
     }
   };
 
-  const handleMouseMove = () => {
-    setShowControls(true);
-    gsap.to(controlsRef.current, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' });
-    
+  const resetControlsTimeout = () => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
     
-    if (isPlaying) {
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false);
-        gsap.to(controlsRef.current, { opacity: 0, y: 20, duration: 0.6, ease: 'power2.inOut' });
-      }, 3000);
+    // Don't auto-hide if any interactive submenu or modal is open
+    if (showSpeedMenu || showFilters || showStats || showVolumeSlider) {
+      return;
     }
+
+    controlsTimeoutRef.current = setTimeout(() => {
+      isControlsVisibleRef.current = false;
+      setShowControls(false);
+      if (controlsRef.current) {
+        gsap.to(controlsRef.current, { 
+          opacity: 0, 
+          y: 24, 
+          duration: 0.5, 
+          ease: 'power2.inOut',
+          overwrite: 'auto'
+        });
+      }
+    }, 3000);
   };
+
+  const showPlayerControls = () => {
+    if (!isControlsVisibleRef.current) {
+      isControlsVisibleRef.current = true;
+      setShowControls(true);
+      if (controlsRef.current) {
+        gsap.to(controlsRef.current, { 
+          opacity: 1, 
+          y: 0, 
+          duration: 0.3, 
+          ease: 'power2.out',
+          overwrite: 'auto'
+        });
+      }
+    }
+    resetControlsTimeout();
+  };
+
+  showControlsRef.current = showPlayerControls;
+
+  const isWindowFocused = () => {
+    if (typeof document === 'undefined') return true;
+    return typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+  };
+
+  const handleUserActivity = () => {
+    if (!isWindowFocused()) {
+      return;
+    }
+    showPlayerControls();
+  };
+
+  useEffect(() => {
+    resetControlsTimeout();
+    return () => {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    showPlayerControls();
+  }, [isPlaying]);
+
+  useEffect(() => {
+    if (showSpeedMenu || showFilters || showStats || showVolumeSlider) {
+      showPlayerControls();
+    } else {
+      resetControlsTimeout();
+    }
+  }, [showSpeedMenu, showFilters, showStats, showVolumeSlider]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      showPlayerControls();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -692,13 +856,21 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
   return (
     <div 
       ref={containerRef} 
-      className="fixed inset-0 z-player bg-black flex flex-col pointer-events-auto"
+      tabIndex={0}
+      className={`fixed inset-0 z-player bg-black flex flex-col pointer-events-auto outline-none ${!showControls ? 'cursor-none' : ''}`}
       style={{ zIndex: 99990 }}
-      onMouseMove={handleMouseMove}
-      onClick={handleMouseMove}
+      onMouseMove={handleUserActivity}
+      onMouseEnter={handleUserActivity}
+      onClick={handleUserActivity}
+      onTouchStart={handleUserActivity}
+      onTouchMove={handleUserActivity}
     >
       {/* Top Bar */}
-      <div className="gsap-player-ui absolute top-0 inset-x-0 p-6 z-10 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between transition-opacity duration-300" style={{ opacity: showControls ? 1 : 0 }}>
+      <div 
+        className={`gsap-player-ui absolute top-0 inset-x-0 p-6 z-10 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between transition-all duration-300 ${
+          showControls ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-4 pointer-events-none'
+        }`}
+      >
         <button 
           onClick={handleClose}
           className="flex items-center gap-2 text-white/80 hover:text-white transition-colors"
@@ -770,6 +942,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           style={{ filter: `brightness(${videoFilters.brightness}%) contrast(${videoFilters.contrast}%) saturate(${videoFilters.saturation}%) sepia(${videoFilters.sepia}%) hue-rotate(${videoFilters.hue}deg)` }}
           onClick={togglePlay}
           onTimeUpdate={handleTimeUpdate}
+          onProgress={handleProgress}
           onLoadedData={onLoadedData}
           onCanPlay={handleCanPlay}
           onLoadedMetadata={handleLoadedMetadata}
@@ -830,10 +1003,36 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
         )}
 
         {/* Title Overlay on Pause */}
-        <div className="gsap-pause-overlay absolute inset-0 pointer-events-none flex items-center justify-center z-10 opacity-0">
-          <div className="bg-black/40 backdrop-blur-xl px-10 py-8 rounded-3xl border border-white/10 flex flex-col items-center shadow-2xl shadow-cyan-500/10">
-            <h2 className="text-4xl font-black italic tracking-tighter text-white mb-2 max-w-2xl text-center drop-shadow-lg">{item.title}</h2>
-            <p className="text-cyan-400 font-mono text-sm uppercase tracking-widest">{item.filename}</p>
+        <div className="gsap-pause-overlay absolute inset-0 pointer-events-none flex items-center justify-center z-10 opacity-0 px-4">
+          <div className="bg-black/60 backdrop-blur-xl px-6 py-6 sm:px-10 sm:py-8 rounded-3xl border border-white/10 flex flex-col items-center shadow-2xl shadow-cyan-500/10 max-w-2xl w-[90%] sm:w-auto mx-auto text-center overflow-hidden">
+            <h2 
+              className="text-2xl sm:text-4xl font-black italic tracking-tighter text-white mb-2 max-w-full text-center drop-shadow-lg line-clamp-2"
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere'
+              }}
+            >
+              {item.title}
+            </h2>
+            <p 
+              className="text-cyan-400 font-mono text-xs sm:text-sm uppercase tracking-wider max-w-full text-center line-clamp-2"
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+                lineHeight: '1.4'
+              }}
+            >
+              {item.filename}
+            </p>
           </div>
         </div>
       </div>
@@ -841,7 +1040,9 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
       {/* Bottom Controls */}
       <div 
         ref={controlsRef}
-        className="gsap-player-ui absolute bottom-0 inset-x-0 p-6 pt-24 bg-gradient-to-t from-black via-black/80 to-transparent z-20"
+        className={`gsap-player-ui absolute bottom-0 inset-x-0 p-6 pt-24 bg-gradient-to-t from-black via-black/80 to-transparent z-20 ${
+          showControls ? 'pointer-events-auto' : 'pointer-events-none'
+        }`}
       >
         <div className="max-w-5xl mx-auto flex flex-col gap-4 relative">
           {/* Real-time Web Audio API Visualiser */}
@@ -855,10 +1056,18 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
           <div className="group relative py-2 cursor-pointer flex items-center">
             {/* Background Track */}
             <div className="w-full h-2 bg-white/15 backdrop-blur-xl border border-white/10 rounded-full relative overflow-hidden">
-              {/* Blue Progress Fill */}
+              {/* Blue Stream Buffer Fill */}
               <div 
-                className="absolute left-0 top-0 bottom-0 bg-cyan-400 rounded-full shadow-[0_0_12px_rgba(34,211,238,0.8)] transition-all duration-75" 
-                ref={progressBarRef} style={{ width: '0%' }}
+                ref={bufferBarRef}
+                className="absolute top-0 bottom-0 bg-blue-500 rounded-full transition-all duration-150 pointer-events-none"
+                style={{ left: '0%', width: '0%', backgroundColor: 'rgba(59, 130, 246, 0.75)', zIndex: 1 }}
+                title="Stream Buffer"
+              />
+
+              {/* Cyan Progress Fill */}
+              <div 
+                className="absolute left-0 top-0 bottom-0 bg-cyan-400 rounded-full shadow-[0_0_12px_rgba(34,211,238,0.8)] transition-all duration-75 pointer-events-none" 
+                ref={progressBarRef} style={{ width: '0%', zIndex: 2 }}
               />
               
               {/* A-B Loop Range Overlay */}
@@ -959,7 +1168,7 @@ export default function VideoPlayer({ item, playlist = [], onClose, onPlayNext, 
 
               {/* Time display */}
               <div className="text-xs font-mono tracking-wider text-white flex items-center leading-none">
-                <span><span ref={currentTimeRef}>0:00</span><span className="text-white/50 mx-0.5">/</span><span className="text-white/70">{formatTime(duration)}</span></span>
+                <span><span ref={currentTimeRef}>0:00</span><span className="text-white/50 mx-0.5">/</span><span ref={totalTimeRef} className="text-white/70">{formatTime(duration)}</span></span>
                 <span ref={remainingTimeRef} className="ml-2 px-1.5 py-0.5 rounded bg-white/10 text-[9px] uppercase text-white/60">
                   00:00
                 </span>
